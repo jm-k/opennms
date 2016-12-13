@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:tx="http://www.springframework.org/schema/tx"
+  xmlns:context="http://www.springframework.org/schema/context"
+  xmlns:util="http://www.springframework.org/schema/util"
+  xmlns:onmsgi="http://xmlns.opennms.org/xsd/spring/onms-osgi"
+  xsi:schemaLocation="
+  http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.0.xsd
+  http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.0.xsd
+  http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx-4.0.xsd
+  http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util-4.0.xsd
+  http://xmlns.opennms.org/xsd/spring/onms-osgi http://xmlns.opennms.org/xsd/spring/onms-osgi.xsd
+  http://camel.apache.org/schema/spring http://camel.apache.org/schema/spring/camel-spring.xsd
+">
+
+  <tx:annotation-driven />
+  <context:annotation-config />
+
+  <bean id="propertyPlaceholderConfigurer" class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer">
+    <property name="systemPropertiesModeName" value="SYSTEM_PROPERTIES_MODE_OVERRIDE" />
+    <!-- 
+      We need to ignore unresolvable placeholders since if multiple PropertyPlaceholderConfigurer
+      preprocessors are in use in a single context (such as inside unit tests), Spring will encounter
+      the issue documented here:
+
+      https://jira.springsource.org/browse/SPR-6428
+
+      TODO: Fix this behavior after upgrading to Spring 3.1.
+    -->
+    <property name="ignoreUnresolvablePlaceholders" value="true"/>
+    <property name="properties">
+      <props>
+        <prop key="org.opennms.core.ipc.sink.kafka.kafkaAddress">127.0.0.1:9092</prop>
+        <prop key="org.opennms.core.ipc.sink.kafka.zookeeperHost">127.0.0.1</prop>
+        <prop key="org.opennms.core.ipc.sink.kafka.zookeeperPort">2181</prop>
+        <prop key="org.opennms.core.ipc.sink.kafka.groupId">kafkaMessageConsumer</prop>
+      </props>
+    </property>
+  </bean>
+
+  <bean id="identity" class="org.springframework.beans.factory.config.MethodInvokingFactoryBean">
+    <property name="targetObject" ref="distPollerDao"/>
+    <property name="targetMethod" value="whoami"/>
+  </bean>
+
+  <bean id="location" class="org.springframework.beans.factory.config.MethodInvokingFactoryBean">
+    <property name="targetObject" ref="identity"/>
+    <property name="targetMethod" value="getLocation"/>
+  </bean>
+
+  <bean id="kafkaMessageConsumerManager" class="org.opennms.core.ipc.sink.kafka.KafkaMessageConsumerManager" />
+
+  <bean id="kafkaLocalMessageProducerFactory" class="org.opennms.core.ipc.sink.kafka.LocalMessageProducerFactory" />
+
+</beans>

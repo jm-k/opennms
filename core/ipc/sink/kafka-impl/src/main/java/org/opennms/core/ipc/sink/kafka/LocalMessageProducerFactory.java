@@ -1,7 +1,7 @@
 /*******************************************************************************
  * This file is part of OpenNMS(R).
  *
- * Copyright (C) 2016-2016 The OpenNMS Group, Inc.
+ * Copyright (C) 2016 The OpenNMS Group, Inc.
  * OpenNMS(R) is Copyright (C) 1999-2016 The OpenNMS Group, Inc.
  *
  * OpenNMS(R) is a registered trademark of The OpenNMS Group, Inc.
@@ -26,40 +26,32 @@
  *     http://www.opennms.com/
  *******************************************************************************/
 
-package org.opennms.core.ipc.sink.common;
-
-import java.util.Objects;
+package org.opennms.core.ipc.sink.kafka;
 
 import org.opennms.core.ipc.sink.api.Message;
-import org.opennms.core.ipc.sink.api.MessageConsumer;
+import org.opennms.core.ipc.sink.api.MessageProducer;
+import org.opennms.core.ipc.sink.api.MessageProducerFactory;
 import org.opennms.core.ipc.sink.api.SinkModule;
-import org.opennms.test.ThreadLocker;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
- * This {@link MessageConsumer} is used to verify the number of threads
- * that are consuming messages.
+ * Message producer that dispatches the messages directly the consumers.
  *
- * @author jwhite
+ * @author ranger
  */
-public class ThreadLockingMessageConsumer<S extends Message, T extends Message> extends ThreadLocker implements MessageConsumer<S, T> {
-    private static final Logger LOG = LoggerFactory.getLogger(ThreadLockingMessageConsumer.class);
+public class LocalMessageProducerFactory implements MessageProducerFactory {
 
-    private final SinkModule<S, T> module;
-
-    public ThreadLockingMessageConsumer(SinkModule<S, T> module) {
-        this.module = Objects.requireNonNull(module);
-    }
+    @Autowired
+    private KafkaMessageConsumerManager messageConsumerManager;
 
     @Override
-    public SinkModule<S, T> getModule() {
-        return module;
+    public <T extends Message> MessageProducer<T> getProducer(SinkModule<T> module) {
+        return new MessageProducer<T>() {
+            @Override
+            public void send(T message) {
+                messageConsumerManager.dispatch(module, message);
+            }
+        };
     }
 
-    @Override
-    public void handleMessage(final T message) {
-        LOG.debug("handling message: {} ({} extra threads waiting)", message, getNumExtraThreadsWaiting());
-        park();
-    }
 }
