@@ -1,7 +1,11 @@
 package org.opennms.core.ipc.sink.kafka;
 
+import java.util.Objects;
 import java.util.Properties;
 
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.opennms.core.camel.JmsQueueNameFactory;
 import org.opennms.core.ipc.sink.api.Message;
 import org.opennms.core.ipc.sink.api.MessageProducer;
@@ -10,11 +14,6 @@ import org.opennms.core.ipc.sink.api.SinkModule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
-
-import joptsimple.internal.Objects;
-import kafka.javaapi.producer.Producer;
-import kafka.producer.KeyedMessage;
-import kafka.producer.ProducerConfig;
 
 public class KafkaRemoteMessageProducerFactory implements MessageProducerFactory, InitializingBean {
     private static final Logger LOG = LoggerFactory.getLogger(KafkaRemoteMessageProducerFactory.class);
@@ -30,28 +29,28 @@ public class KafkaRemoteMessageProducerFactory implements MessageProducerFactory
         LOG.debug("getProducer({}): creating MessageProducer.", topic);
 
         final Properties props = new Properties();
-        props.put("metadata.broker.list", m_kafkaAddress);
-        props.put("request.required.acks", "1");
-        props.put("serializer.class", "kafka.serializer.StringEncoder");
-        /*
+        props.put("bootstrap.servers", m_kafkaAddress);
+        props.put("acks", "all");
         props.put("retries", 0);
+        /*
         props.put("batch.size", 16384);
         props.put("linger.ms", 1);
         props.put("buffer.memory", 33554432);
         */
+        props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+        props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
 
         // TODO implement a partitioning scheme
         //props.put("partitioner.class", "");
 
         LOG.debug("getProducer({}): using config {}", topic, props);
-        final ProducerConfig config = new ProducerConfig(props);
-        final Producer<String, String> producer = new Producer<>(config);
+        final Producer<String,String> producer = new KafkaProducer<>(props);
 
         return new MessageProducer<T>() {
             @Override
             public void send(final T message) {
                 LOG.debug("getProducer({}): config={}: sending message {}", topic, props, message);
-                final KeyedMessage<String,String> record = new KeyedMessage<>(topic, module.marshal(message));
+                final ProducerRecord<String,String> record = new ProducerRecord<>(topic, module.marshal(message));
                 producer.send(record);
                 //LOG.debug("getProducer({}): sent message {}", topic, message);
             }
@@ -89,10 +88,10 @@ public class KafkaRemoteMessageProducerFactory implements MessageProducerFactory
 
     @Override
     public void afterPropertiesSet() throws Exception {
-        Objects.ensureNotNull(m_kafkaAddress);
-        Objects.ensureNotNull(m_zookeeperHost);
-        Objects.ensureNotNull(m_zookeeperPort);
-        Objects.ensureNotNull(m_groupId);
+        Objects.requireNonNull(m_kafkaAddress);
+        Objects.requireNonNull(m_zookeeperHost);
+        Objects.requireNonNull(m_zookeeperPort);
+        Objects.requireNonNull(m_groupId);
         LOG.debug("KafkaRemoteMessageProducerFactory: kafkaAddress={}, zookeeperHost={}, zookeeperPort={}, groupId={}", m_kafkaAddress, m_zookeeperHost, m_zookeeperPort, m_groupId);
     }
 }

@@ -49,9 +49,50 @@
       <artifactId>org.opennms.core.camel</artifactId>
     </dependency>
     <dependency>
-      <groupId>org.apache.servicemix.bundles</groupId>
-      <artifactId>org.apache.servicemix.bundles.kafka_2.10</artifactId>
-      <version>0.8.1_1</version>
+      <groupId>org.apache.kafka</groupId>
+      <artifactId>kafka_2.11</artifactId>
+      <version>0.10.1.0</version>
+      <exclusions>
+        <exclusion>
+          <groupId>javax.xml.bind</groupId>
+          <artifactId>jaxb-api</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.sun.xml.bind</groupId>
+          <artifactId>jaxb-impl</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>commons-logging</groupId>
+          <artifactId>commons-logging</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>log4j</groupId>
+          <artifactId>log4j</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.slf4j</groupId>
+          <artifactId>slf4j-log4j12</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.xerial.snappy</groupId>
+          <artifactId>snappy-java</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>com.101tec</groupId>
+      <artifactId>zkclient</artifactId>
+      <version>0.10</version>
+      <exclusions>
+        <exclusion>
+          <artifactId>log4j</artifactId>
+          <groupId>log4j</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>slf4j-log4j12</artifactId>
+          <groupId>org.slf4j</groupId>
+        </exclusion>
+      </exclusions>
     </dependency>
     <dependency>
       <groupId>com.google.guava</groupId>
@@ -93,34 +134,6 @@
         </exclusion>
       </exclusions>
     </dependency>
-    <dependency>
-      <groupId>org.apache.camel</groupId>
-      <artifactId>camel-kafka</artifactId>
-      <version>${camelVersion}</version>
-      <exclusions>
-        <exclusion>
-          <groupId>javax.xml.bind</groupId>
-          <artifactId>jaxb-api</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>com.sun.xml.bind</groupId>
-          <artifactId>jaxb-impl</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>commons-logging</groupId>
-          <artifactId>commons-logging</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>log4j</groupId>
-          <artifactId>log4j</artifactId>
-        </exclusion>
-        <!-- snappy-java has OSGi loading problems because of JNI bits -->
-        <exclusion>
-          <groupId>org.xerial.snappy</groupId>
-          <artifactId>snappy-java</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>  
     <dependency>
       <groupId>org.opennms.core</groupId>
       <artifactId>org.opennms.core.daemon</artifactId>
@@ -184,6 +197,41 @@
       <scope>test</scope>
     </dependency>
     <dependency>
+      <groupId>org.apache.zookeeper</groupId>
+      <artifactId>zookeeper</artifactId>
+      <version>3.4.9</version>
+      <scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <artifactId>log4j</artifactId>
+          <groupId>log4j</groupId>
+        </exclusion>
+        <exclusion>
+          <artifactId>slf4j-log4j12</artifactId>
+          <groupId>org.slf4j</groupId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.scala-lang</groupId>
+      <artifactId>scala-library</artifactId>
+      <version>2.11.8</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.yammer.metrics</groupId>
+      <artifactId>metrics-annotation</artifactId>
+      <version>2.2.0</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.yammer.metrics</groupId>
+      <artifactId>metrics-core</artifactId>
+      <version>2.2.0</version>
+      <scope>test</scope>
+    </dependency>
+    <!--
+    <dependency>
       <groupId>org.apache.curator</groupId>
       <artifactId>curator-test</artifactId>
       <version>${curatorVersion}</version>
@@ -199,5 +247,6 @@
         </exclusion>
       </exclusions>
     </dependency>
+    -->
   </dependencies>
 </project>

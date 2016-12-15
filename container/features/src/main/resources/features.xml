@@ -115,7 +115,7 @@
       <bundle dependency="true">mvn:org.apache.zookeeper/zookeeper/3.4.7</bundle>
       <bundle dependency="true">wrap:mvn:com.yammer.metrics/metrics-core/2.2.0$Bundle-Version=2.2.0&amp;Export-Package=*;-noimport:=true;version="2.2.0"</bundle>
       <bundle dependency="true">wrap:mvn:com.yammer.metrics/metrics-annotation/2.2.0$Bundle-Version=2.2.0&amp;Export-Package=*;-noimport:=true;version="2.2.0"</bundle>
-      <bundle dependency="true">mvn:org.apache.servicemix.bundles/org.apache.servicemix.bundles.kafka_2.10/0.8.1_1</bundle>
+      <bundle dependency="true">mvn:org.apache.servicemix.bundles/org.apache.servicemix.bundles.kafka_2.10/0.10.1.0_1</bundle>
       <!-- HZN-811: Missing dependency on zkclient, can be removed when we upgrade to Camel 2.16.0+ -->
       <bundle dependency="true">wrap:mvn:com.101tec/zkclient/0.3$Bundle-Version=0.3&amp;Export-Package=*;-noimport:=true;version="0.3"</bundle>
       <feature version="2.14.1">camel-core</feature>

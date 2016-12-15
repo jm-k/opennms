@@ -51,7 +51,6 @@ import org.opennms.core.ipc.sink.kafka.heartbeat.Heartbeat;
 import org.opennms.core.ipc.sink.kafka.heartbeat.HeartbeatModule;
 import org.opennms.core.ipc.sink.test.ThreadLockingMessageConsumer;
 import org.opennms.core.test.OpenNMSJUnit4ClassRunner;
-import org.opennms.core.test.camel.CamelBlueprintTest;
 import org.opennms.minion.core.api.MinionIdentity;
 import org.opennms.test.JUnitConfigurationEnvironment;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -65,7 +64,7 @@ import org.springframework.test.context.ContextConfiguration;
         "classpath:/META-INF/opennms/applicationContext-ipc-sink-server-kafka.xml"
 })
 @JUnitConfigurationEnvironment
-public class HeartbeatSinkBlueprintIT extends CamelBlueprintTest {
+public class HeartbeatSinkBlueprintIT extends KafkaTestCase {
 
     private static final String REMOTE_LOCATION_NAME = "remote";
 
@@ -103,7 +102,7 @@ public class HeartbeatSinkBlueprintIT extends CamelBlueprintTest {
 
     @Override
     protected Long getCamelContextCreationTimeout() {
-        return 5L;
+        return 1L;
     }
 
     @Override
@@ -116,32 +115,40 @@ public class HeartbeatSinkBlueprintIT extends CamelBlueprintTest {
         consumerManager.afterPropertiesSet();
     }
 
-    @Test(timeout=60000)
-    public void canProduceAndConsumerMessages() throws Exception {
-        System.err.println("starting");
+    @Test(timeout=30000)
+    public void canProduceAndConsumeMessages() throws Exception {
         HeartbeatModule module = new HeartbeatModule();
 
         AtomicInteger heartbeatCount = new AtomicInteger();
-        consumerManager.registerConsumer(new MessageConsumer<Heartbeat>() {
+        final MessageConsumer<Heartbeat> heartbeatConsumer = new MessageConsumer<Heartbeat>() {
             @Override
             public SinkModule<Heartbeat> getModule() {
                 return module;
             }
 
             @Override
-            public void handleMessage(Heartbeat heartbeat) {
+            public void handleMessage(final Heartbeat heartbeat) {
                 heartbeatCount.incrementAndGet();
             }
-        });
+        };
 
-        MessageProducer<Heartbeat> localProducer = localMessageProducerFactory.getProducer(module);
-        localProducer.send(new Heartbeat());
-        await().atMost(1, MINUTES).until(() -> heartbeatCount.get(), equalTo(1));
-
-        MessageProducerFactory remoteMessageProducerFactory = context.getRegistry().lookupByNameAndType("kafkaRemoteMessageProducerFactory", MessageProducerFactory.class);
-        MessageProducer<Heartbeat> remoteProducer = remoteMessageProducerFactory.getProducer(module);
-        remoteProducer.send(new Heartbeat());
-        await().atMost(1, MINUTES).until(() -> heartbeatCount.get(), equalTo(2));
+        try {
+            consumerManager.registerConsumer(heartbeatConsumer);
+    
+            /* it takes a while for the new kafka to be ready with new topics I guess? */
+            Thread.sleep(5000);
+    
+            final MessageProducer<Heartbeat> localProducer = localMessageProducerFactory.getProducer(module);
+            localProducer.send(new Heartbeat());
+            await().atMost(1, MINUTES).until(() -> heartbeatCount.get(), equalTo(1));
+    
+            final MessageProducerFactory remoteMessageProducerFactory = context.getRegistry().lookupByNameAndType("kafkaRemoteMessageProducerFactory", MessageProducerFactory.class);
+            MessageProducer<Heartbeat> remoteProducer = remoteMessageProducerFactory.getProducer(module);
+            remoteProducer.send(new Heartbeat());
+            await().atMost(1, MINUTES).until(() -> heartbeatCount.get(), equalTo(2));
+        } finally {
+            consumerManager.unregisterConsumer(heartbeatConsumer);
+        }
     }
 
     @Test(timeout=60000)
@@ -158,26 +165,34 @@ public class HeartbeatSinkBlueprintIT extends CamelBlueprintTest {
         final ThreadLockingMessageConsumer<Heartbeat> consumer = new ThreadLockingMessageConsumer<>(parallelHeartbeatModule);
 
         final CompletableFuture<Integer> future = consumer.waitForThreads(NUM_CONSUMER_THREADS);
-        consumerManager.registerConsumer(consumer);
 
-        final MessageProducerFactory remoteMessageProducerFactory = context.getRegistry().lookupByNameAndType("kafkaRemoteMessageProducerFactory", MessageProducerFactory.class);
-        final MessageProducer<Heartbeat> producer = remoteMessageProducerFactory.getProducer(HeartbeatModule.INSTANCE);
-
-        final HeartbeatGenerator generator = new HeartbeatGenerator(producer, 100.0);
-        generator.start();
-
-        // Wait until we have NUM_CONSUMER_THREADS locked
-        future.get();
-
-        // Take a snooze
-        Thread.sleep(TimeUnit.SECONDS.toMillis(5));
-
-        System.err.println("extra threads: " + consumer.getNumExtraThreadsWaiting());
-
-        // Verify that there aren't more than NUM_CONSUMER_THREADS waiting
-        assertEquals(0, consumer.getNumExtraThreadsWaiting());
-
-        generator.stop();
+        try {
+            consumerManager.registerConsumer(consumer);
+    
+            /* it takes a while for the new kafka to be ready with new topics I guess? */
+            Thread.sleep(5000);
+    
+            final MessageProducerFactory remoteMessageProducerFactory = context.getRegistry().lookupByNameAndType("kafkaRemoteMessageProducerFactory", MessageProducerFactory.class);
+            final MessageProducer<Heartbeat> producer = remoteMessageProducerFactory.getProducer(HeartbeatModule.INSTANCE);
+    
+            final HeartbeatGenerator generator = new HeartbeatGenerator(producer, 100.0);
+            generator.start();
+    
+            // Wait until we have NUM_CONSUMER_THREADS locked
+            future.get();
+    
+            // Take a snooze
+            Thread.sleep(TimeUnit.SECONDS.toMillis(5));
+    
+            System.err.println("extra threads: " + consumer.getNumExtraThreadsWaiting());
+    
+            // Verify that there aren't more than NUM_CONSUMER_THREADS waiting
+            assertEquals(0, consumer.getNumExtraThreadsWaiting());
+    
+            generator.stop();
+        } finally {
+            consumerManager.unregisterConsumer(consumer);
+        }
     }
 
 }

@@ -1,14 +1,22 @@
 package org.opennms.core.ipc.sink.kafka;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Objects;
 import java.util.Properties;
+import java.util.Set;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 
+import org.I0Itec.zkclient.ZkClient;
+import org.I0Itec.zkclient.ZkConnection;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.opennms.core.camel.JmsQueueNameFactory;
 import org.opennms.core.ipc.sink.api.Message;
 import org.opennms.core.ipc.sink.api.MessageConsumer;
@@ -21,14 +29,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Value;
 
-import com.google.common.collect.LinkedListMultimap;
-import com.google.common.collect.Multimap;
+import com.google.common.collect.MapMaker;
 
-import joptsimple.internal.Objects;
-import kafka.consumer.ConsumerConfig;
-import kafka.consumer.ConsumerIterator;
-import kafka.consumer.KafkaStream;
-import kafka.javaapi.consumer.ConsumerConnector;
+import kafka.admin.AdminUtils;
+import kafka.admin.RackAwareMode;
+import kafka.utils.ZKStringSerializer$;
+import kafka.utils.ZkUtils;
 
 public class KafkaMessageConsumerManager implements MessageConsumerManager, InitializingBean {
     private static final Logger LOG = LoggerFactory.getLogger(KafkaMessageConsumerManager.class);
@@ -47,10 +53,14 @@ public class KafkaMessageConsumerManager implements MessageConsumerManager, Init
     @Value("${org.opennms.core.ipc.sink.kafka.groupId}")
     private String m_groupId;
 
-    private final Map<SinkModule<Message>, TopicConsumer<Message>> m_topicConsumersByModule = new HashMap<>();
-    private final Multimap<SinkModule<Message>, MessageConsumer<Message>> m_consumersByModule = LinkedListMultimap.create();
+    private final ConcurrentMap<SinkModule<Message>,String> m_topicsByModule = new MapMaker().concurrencyLevel(2).makeMap();
+    private final ConcurrentMap<String,SinkModule<Message>> m_modulesByTopic = new MapMaker().concurrencyLevel(2).makeMap();
+    private final ConcurrentMap<SinkModule<Message>,TopicProcessor<Message>> m_topicProcessorsByModule = new MapMaker().concurrencyLevel(2).makeMap();
 
     private Properties m_config;
+    private ConsumerReader m_consumerReader;
+
+    private ZkUtils m_zkUtils;
 
     public KafkaMessageConsumerManager() {
     }
@@ -75,12 +85,9 @@ public class KafkaMessageConsumerManager implements MessageConsumerManager, Init
         m_groupId = groupId;
     }
 
-    @SuppressWarnings("unchecked")
     @Override
     public <T extends Message> void dispatch(final SinkModule<T> module, final T message) {
-        LOG.trace("Dispatching message to module {}: {}", module, message);
-        m_consumersByModule.get((SinkModule<Message>) module)
-        .forEach(c -> c.handleMessage(message));
+        m_topicProcessorsByModule.get(module).dispatch(message);
     }
 
     @SuppressWarnings("unchecked")
@@ -92,116 +99,245 @@ public class KafkaMessageConsumerManager implements MessageConsumerManager, Init
 
         try (MDCCloseable mdc = Logging.withPrefixCloseable(MessageConsumerManager.LOG_PREFIX)) {
             LOG.info("Registering consumer: {}", consumer);
+
             final SinkModule<T> module = consumer.getModule();
 
-            if (!m_consumersByModule.containsEntry(module, consumer)) {
-                m_consumersByModule.put((SinkModule<Message>)module, (MessageConsumer<Message>)consumer);
-            }
+            final JmsQueueNameFactory topicFactory = new JmsQueueNameFactory(KafkaSinkConstants.KAFKA_TOPIC_PREFIX, module.getId());
+            final String topic = topicFactory.getName();
 
-            if (!m_topicConsumersByModule.containsKey(module)) {
-                final TopicConsumer<T> newConsumer = new TopicConsumer<T>(module, this, m_config);
-                m_topicConsumersByModule.put((SinkModule<Message>)module, (TopicConsumer<Message>)newConsumer);
-                newConsumer.start();
+            m_topicsByModule.put((SinkModule<Message>) module, topic);
+            m_modulesByTopic.put(topic, (SinkModule<Message>) module);
+
+            if (!m_topicProcessorsByModule.containsKey(module)) {
+                final TopicProcessor<Message> newTopicProcessor = new TopicProcessor<Message>((SinkModule<Message>) module);
+                for (int i=0; i < module.getNumConsumerThreads(); i++) {
+                    m_pool.submit(newTopicProcessor);
+                }
+                m_topicProcessorsByModule.put((SinkModule<Message>) module, newTopicProcessor);
             }
+            TopicProcessor<Message> tp = m_topicProcessorsByModule.get((SinkModule<Message>) module);
+            tp.addConsumer((MessageConsumer<Message>) consumer);
+
+            startKafkaConsumerReaderIfNecessary();
+            m_consumerReader.subscribe(m_topicsByModule.values());
         }
     }
 
     @SuppressWarnings("unchecked")
     @Override
     public <T extends Message> void unregisterConsumer(final MessageConsumer<T> consumer) throws Exception {
-        LOG.info("Unregistering consumer: {}", consumer);
-        final SinkModule<T> module = consumer.getModule();
-        m_consumersByModule.remove(module, consumer);
-        if (m_consumersByModule.get((SinkModule<Message>)module).isEmpty()) {
-            // no more consumers for this topic, close down the threads
-            final TopicConsumer<T> topicConsumer = (TopicConsumer<T>) m_topicConsumersByModule.remove(module);
-            topicConsumer.stop();
+        try(MDCCloseable mdc = Logging.withPrefixCloseable(MessageConsumerManager.LOG_PREFIX)) {
+            LOG.info("Unregistering consumer: {}", consumer);
+
+            final SinkModule<T> module = consumer.getModule();
+
+            final JmsQueueNameFactory topicFactory = new JmsQueueNameFactory(KafkaSinkConstants.KAFKA_TOPIC_PREFIX, module.getId());
+            final String topic = topicFactory.getName();
+
+            final TopicProcessor<Message> tp = m_topicProcessorsByModule.get(module);
+            if (tp != null) {
+                tp.removeConsumer((MessageConsumer<Message>) consumer);
+
+                if (tp.size() == 0) {
+                    m_modulesByTopic.remove(topic);
+                    m_topicsByModule.remove(module);
+                }
+            }
+
+            if (m_modulesByTopic.size() == 0) {
+                stopKafkaConsumerReader();
+            } else if (m_consumerReader != null) {
+                m_consumerReader.subscribe(m_modulesByTopic.keySet());
+            } else {
+                LOG.warn("Topics are still subscribed, but we have no consumer reader!  This should not happen.");
+            }
+        }
+    }
+
+    void unregisterAllConsumers() throws Exception {
+        for (final TopicProcessor<Message> tp : m_topicProcessorsByModule.values()) {
+            final Collection<MessageConsumer<Message>> consumers = tp.getConsumers();
+            for (final MessageConsumer<Message> consumer : consumers) {
+                unregisterConsumer(consumer);
+            }
         }
     }
 
     @Override
     public void afterPropertiesSet() throws Exception {
-        Objects.ensureNotNull(m_kafkaAddress);
-        Objects.ensureNotNull(m_zookeeperHost);
-        Objects.ensureNotNull(m_zookeeperPort);
-        Objects.ensureNotNull(m_groupId);
+        Objects.requireNonNull(m_kafkaAddress);
+        Objects.requireNonNull(m_zookeeperHost);
+        Objects.requireNonNull(m_zookeeperPort);
+        Objects.requireNonNull(m_groupId);
 
         final Properties props = new Properties();
-        //props.put("bootstrap.servers", m_kafkaAddress);
-        props.put("zookeeper.connect", m_zookeeperHost + ":" + m_zookeeperPort);
+        props.put("bootstrap.servers", m_kafkaAddress);
         props.put("group.id", m_groupId);
-        props.put("zookeeper.session.timeout.ms", "400");
-        props.put("zookeeper.sync.time.ms", "200");
-        props.put("auto.commit.interval.ms", "1000");
-        /*
         props.put("enable.auto.commit", "true");
+        props.put("auto.commit.interval.ms", "1000");
         props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
         props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
-         */
         m_config = props;
     }
 
-    private static final class TopicConsumer<T extends Message> {
-        private final SinkModule<T> m_module;
-        private final ConsumerConnector m_consumerConnector;
-        private final MessageConsumerManager m_manager;
-        private final List<Future<?>> m_futures = new ArrayList<>();
-        private final String m_topic;
-
-        public TopicConsumer(final SinkModule<T> module, final MessageConsumerManager manager, final Properties config) {
-            m_module = module;
-            m_manager = manager;
-            m_consumerConnector = kafka.consumer.Consumer.createJavaConsumerConnector(new ConsumerConfig(config));
-
-            final JmsQueueNameFactory topicFactory = new JmsQueueNameFactory(KafkaSinkConstants.KAFKA_TOPIC_PREFIX, module.getId());
-            m_topic = topicFactory.getName();
-
-            LOG.info("TopicConsumer({}): started Kafka consumer with config {}", m_topic, config);
-        }
-
-        public void start() {
-            final int threads = m_module.getNumConsumerThreads();
-            LOG.info("TopicConsumer({}): listening with {} threads.", m_topic, threads);
-
-            final Map<String,Integer> topicCountMap = new HashMap<>();
-            topicCountMap.put(m_topic, Integer.valueOf(threads));
-
-            final Map<String, List<KafkaStream<byte[], byte[]>>> consumerMap = m_consumerConnector.createMessageStreams(topicCountMap);
-            LOG.debug("TopicConsumer({}): got consumer map: {}", m_topic, consumerMap.keySet());
-
-            final List<KafkaStream<byte[], byte[]>> streams = consumerMap.get(m_topic);
-            LOG.debug("TopicConsumer({}): got {} streams.", m_topic, streams.size());
-
-            for (final KafkaStream<byte[], byte[]> stream : streams) {
-                LOG.debug("TopicConsumer({}): Scheduling stream.", m_topic);
-                m_futures.add(m_pool.submit(new Runnable() {
-                    @Override
-                    public void run() {
-                        try (MDCCloseable mdc = Logging.withPrefixCloseable(MessageConsumerManager.LOG_PREFIX)) {
-                            LOG.debug("TopicConsumer({}): starting listening.", m_topic);
-                            final ConsumerIterator<byte[], byte[]> it = stream.iterator();
-                            while (it.hasNext()) {
-                                final String message = new String(it.next().message());
-                                LOG.trace("TopicConsumer({}): dispatching {}", m_topic, message);
-                                final T messageObject = m_module.unmarshal(message);
-                                m_manager.dispatch(m_module, messageObject);
-                            }
-                            LOG.debug("TopicConsumer({}): finished listening.", m_topic);
-                        };
-                    }
-                }));
-            }
-
-            LOG.debug("TopicConsumer({}): finished launching {} streams.", m_topic, m_futures.size());
-        }
-
-        public void stop() {
-            LOG.info("TopicConsumer({}): stopping listening to {} threads.", m_topic, m_futures.size());
-            for (final Future<?> future : m_futures) {
-                future.cancel(true);
-            }
-            m_futures.clear();
+    protected void startKafkaConsumerReaderIfNecessary() {
+        if (m_consumerReader == null) {
+            final KafkaConsumer<String,String> consumer = new KafkaConsumer<String,String>(m_config);
+            final String zookeeperConnection = m_zookeeperHost + ":" + m_zookeeperPort;
+            final ZkClient client = new ZkClient(zookeeperConnection, 30000, 30000, ZKStringSerializer$.MODULE$);
+            m_zkUtils = new ZkUtils(client, new ZkConnection(zookeeperConnection), false);
+            m_consumerReader = new ConsumerReader(consumer, m_zkUtils);
+            m_pool.submit(m_consumerReader);
         }
     }
 
+    protected void stopKafkaConsumerReader() {
+        if (m_consumerReader != null) {
+            m_consumerReader.unsubscribe();
+            m_consumerReader.stop();
+            m_consumerReader = null;
+        }
+        if (m_zkUtils != null) {
+            m_zkUtils.close();
+            m_zkUtils = null;
+        }
+    }
+
+    protected TopicProcessor<Message> getTopicProcessor(final String topic) {
+        final SinkModule<Message> module = m_modulesByTopic.get(topic);
+        return m_topicProcessorsByModule.get(module);
+    }
+
+    private final class ConsumerReader implements Runnable {
+        private KafkaConsumer<String, String> m_kafkaConsumer;
+        private ZkUtils m_zkUtils;
+        private CopyOnWriteArraySet<String> m_topics = new CopyOnWriteArraySet<>();
+        private AtomicBoolean m_modified = new AtomicBoolean(false);
+        private AtomicBoolean m_running = new AtomicBoolean(true);
+
+        public ConsumerReader(final KafkaConsumer<String, String> consumer, final ZkUtils zkUtils) {
+            m_kafkaConsumer = consumer;
+            m_zkUtils = zkUtils;
+        }
+
+        public void subscribe(final Collection<String> topics) {
+            if (topics.size() > 0) {
+                m_topics.addAll(topics);
+                m_topics.retainAll(topics);
+            } else {
+                m_topics.clear();
+            }
+            m_modified.set(true);
+        }
+
+        public void unsubscribe() {
+            m_topics.clear();
+            m_modified.set(true);
+        }
+
+        public void stop() {
+            m_running.set(false);
+        }
+
+        @Override
+        public void run() {
+            LOG.debug("ConsumerReader: Starting consuming from Kafka.");
+            while (m_running.get()) {
+                //LOG.debug("ConsumerReader: Polling for new records.");
+                final boolean modified = m_modified.getAndSet(false);
+                if (modified) {
+                    final Set<String> topics = new HashSet<>(m_topics);
+                    LOG.debug("ConsumerReader: Topic list has been modified.  Updating subscriptions: {}", topics);
+                    if (topics.isEmpty()) {
+                        m_kafkaConsumer.unsubscribe();
+                    } else {
+                        for (final String topic : topics) {
+                            if (!AdminUtils.topicExists(m_zkUtils, topic)) {
+                                LOG.debug("ConsumerReader: Topic ({}) does not exist.  Creating.", topic);
+                                AdminUtils.createTopic(m_zkUtils, topic, 1, 1, new Properties(), RackAwareMode.Disabled$.MODULE$);
+                                LOG.debug("ConsumerReader: Finished creating topic {}", topic);
+                            }
+                        }
+                        m_kafkaConsumer.subscribe(topics);
+                    }
+                }
+                final ConsumerRecords<String, String> records = m_kafkaConsumer.poll(100);
+                LOG.debug("ConsumerReader: Got {} records.", records.count());
+                for (final ConsumerRecord<String, String> record : records) {
+                    final String topic = record.topic();
+                    final TopicProcessor<Message> tp = getTopicProcessor(topic);
+                    tp.queue(record);
+                }
+            }
+            LOG.debug("ConsumerReader: Closing Kafka consumer.");
+            m_kafkaConsumer.close();
+        }
+    }
+
+    private static final class TopicProcessor<T extends Message> implements Runnable {
+        private final SinkModule<T> m_module;
+        private final String m_topic;
+
+        private final Set<MessageConsumer<T>> m_consumers = new CopyOnWriteArraySet<>();
+        private final int m_queueSize = 100; // TODO make configurable (in SinkModule?)
+        private final LinkedBlockingQueue<ConsumerRecord<String, String>> m_queue = new LinkedBlockingQueue<>(m_queueSize );
+
+        public TopicProcessor(final SinkModule<T> module) {
+            m_module = module;
+            final JmsQueueNameFactory topicFactory = new JmsQueueNameFactory(KafkaSinkConstants.KAFKA_TOPIC_PREFIX, module.getId());
+            m_topic = topicFactory.getName();
+            LOG.info("TopicProcessor({}): Initialized.", m_topic);
+        }
+
+        public Collection<MessageConsumer<T>> getConsumers() {
+            return m_consumers;
+        }
+
+        public int size() {
+            return m_consumers.size();
+        }
+
+        public void addConsumer(final MessageConsumer<T> consumer) {
+            LOG.debug("TopicProcessor({}): Adding consumer: {}", m_topic, consumer);
+            m_consumers.add(consumer);
+        }
+
+        public void removeConsumer(final MessageConsumer<T> consumer) {
+            LOG.debug("TopicProcessor({}): Removing consumer: {}", m_topic, consumer);
+            m_consumers.remove(consumer);
+        }
+
+        public void queue(final ConsumerRecord<String,String> record) {
+            LOG.debug("TopicProcessor({}): Queueing record: {}", m_topic, record);
+            try {
+                m_queue.put(record);
+            } catch (final InterruptedException e) {
+                LOG.debug("Interrupted while queueing {}", record.value(), e);
+            }
+        }
+
+        public void dispatch(final T message) {
+            LOG.debug("TopicProcessor({}): Dispatching message to {} consumers: {}", m_topic, m_consumers.size(), message);
+            m_consumers.forEach(c -> c.handleMessage(message));
+        }
+
+        @Override
+        public void run() {
+            LOG.info("TopicProcessor({}): Starting queue processing.", m_topic);
+            while (true) {
+                try {
+                    final ConsumerRecord<String, String> record = m_queue.take();
+                    LOG.info("TopicProcessor({}): Got record: {}", m_topic, record);
+                    if (!m_topic.equals(record.topic())) {
+                        LOG.warn("TopicProcessor({}): Record topic ({}) does not match thread processor topic. Skipping.", m_topic, record.topic());
+                    } else {
+                        dispatch(m_module.unmarshal(record.value()));
+                    }
+                } catch (final InterruptedException e) {
+                    LOG.warn("TopicProcessor({}): Interrupted.", m_topic, e);
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+    }
 }

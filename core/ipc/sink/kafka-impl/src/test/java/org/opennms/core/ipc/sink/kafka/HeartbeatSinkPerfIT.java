@@ -41,7 +41,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.apache.camel.util.KeyValueHolder;
 import org.junit.After;
-import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -137,21 +136,20 @@ public class HeartbeatSinkPerfIT extends KafkaTestCase {
         consumerManager.afterPropertiesSet();
     }
 
-    //@Before
     public void configureGenerators() throws Exception {
-        //super.setUp();
         System.err.println("Starting Heartbeat generators.");
 
+        /* Start the consumer */
         final HeartbeatModule parallelHeartbeatModule = new HeartbeatModule() {
             @Override
             public int getNumConsumerThreads() {
                 return NUM_CONSUMER_THREADS;
             }
         };
-
         final HeartbeatConsumer consumer = new HeartbeatConsumer(parallelHeartbeatModule, receivedMeter);
         consumerManager.registerConsumer(consumer);
 
+        /* Start the producer */
         final MessageProducerFactory remoteMessageProducerFactory = context.getRegistry().lookupByNameAndType("kafkaRemoteMessageProducerFactory", MessageProducerFactory.class);
         final MessageProducer<Heartbeat> producer = remoteMessageProducerFactory.getProducer(HeartbeatModule.INSTANCE);
 
@@ -166,17 +164,18 @@ public class HeartbeatSinkPerfIT extends KafkaTestCase {
 
     @After
     public void tearDown() throws Exception {
-        for (HeartbeatGenerator generator : generators) {
-            generator.stop();
+        if (generators != null) {
+            for (HeartbeatGenerator generator : generators) {
+                generator.stop();
+            }
+            generators.clear();
         }
-        generators.clear();
+        consumerManager.unregisterAllConsumers();
         super.tearDown();
     }
 
-    @Test(timeout=60000)
+    @Test(timeout=30000)
     public void quickRun() throws Exception {
-        System.err.println("quickRun()");
-        Thread.sleep(10000);
         configureGenerators();
         await().until(() -> Long.valueOf(receivedMeter.getCount()), greaterThan(100L)); 
     }
