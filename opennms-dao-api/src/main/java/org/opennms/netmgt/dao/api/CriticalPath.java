@@ -1,8 +1,8 @@
 /*******************************************************************************
  * This file is part of OpenNMS(R).
  *
- * Copyright (C) 2006-2014 The OpenNMS Group, Inc.
- * OpenNMS(R) is Copyright (C) 1999-2014 The OpenNMS Group, Inc.
+ * Copyright (C) 2016-2016 The OpenNMS Group, Inc.
+ * OpenNMS(R) is Copyright (C) 1999-2016 The OpenNMS Group, Inc.
  *
  * OpenNMS(R) is a registered trademark of The OpenNMS Group, Inc.
  *
@@ -26,57 +26,31 @@
  *     http://www.opennms.com/
  *******************************************************************************/
 
-package org.opennms.netmgt.config.api;
+package org.opennms.netmgt.dao.api;
 
 import java.net.InetAddress;
 
-/**
- * An interface for OpennmsServerConfigManager
- * 
- * @author <a href="ryan@mail1.opennms.com"> Ryan Lambeth </a>
- *
- */
-public interface OpennmsServerConfig {
+public class CriticalPath {
 
-	/**
-	 * <p>getServerName</p>
-	 * 
-	 * @return a String
-	 */
-	String getServerName();
+    private final String locationName;
+    private final InetAddress ipAddress;
+    private final String serviceName;
 
-	/**
-	 * <p>getDefaultCriticalPathService</p>
-	 * 
-	 * @return a String
-	 */
-	InetAddress getDefaultCriticalPathIp();
+    public CriticalPath(String locationName, InetAddress ipAddress, String serviceName) {
+        this.locationName = locationName;
+        this.ipAddress = ipAddress;
+        this.serviceName = serviceName;
+    }
 
-	/**
-	 * <p>getDefaultCriticalPathService</p>
-	 * 
-	 * @return a String
-	 */
-	String getDefaultCriticalPathService();
-	
-	/**
-	 * <p>getDefaultCriticalPathTimeout</p>
-	 * 
-	 * @return an int
-	 */
-	int getDefaultCriticalPathTimeout();
-	
-	/**
-	 * <p>getDefaultCriticalPathRetries</p>
-	 * 
-	 * @return an int
-	 */
-	int getDefaultCriticalPathRetries();
-	
-	/**
-	 * <p>verifyServer</p>
-	 * 
-	 * @return a boolean
-	 */
-	boolean verifyServer();
+    public String getLocationName() {
+        return locationName;
+    }
+
+    public InetAddress getIpAddress() {
+        return ipAddress;
+    }
+
+    public String getServiceName() {
+        return serviceName;
+    }
 }

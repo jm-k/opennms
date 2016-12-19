@@ -36,9 +36,9 @@ import java.util.Iterator;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
-import org.opennms.core.utils.InetAddressUtils;
 import org.opennms.netmgt.config.OpennmsServerConfigFactory;
 import org.opennms.netmgt.config.PollerConfig;
+import org.opennms.netmgt.dao.api.CriticalPath;
 import org.opennms.netmgt.dao.hibernate.PathOutageManagerDaoImpl;
 import org.opennms.netmgt.events.api.EventConstants;
 import org.opennms.netmgt.events.api.EventIpcManager;
@@ -49,6 +49,7 @@ import org.opennms.netmgt.poller.pollables.PendingPollEvent;
 import org.opennms.netmgt.poller.pollables.PollContext;
 import org.opennms.netmgt.poller.pollables.PollEvent;
 import org.opennms.netmgt.poller.pollables.PollableService;
+import org.opennms.netmgt.snmp.InetAddrUtils;
 import org.opennms.netmgt.xml.event.Event;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -265,19 +266,13 @@ public class DefaultPollContext implements PollContext, EventListener {
         
         if (uei.equals(EventConstants.NODE_DOWN_EVENT_UEI)
                 && this.getPollerConfig().isPathOutageEnabled()) {
-            String[] criticalPath = PathOutageManagerDaoImpl.getInstance().getCriticalPath(nodeId);
-            
-            if (criticalPath[0] != null && !"".equals(criticalPath[0].trim())) {
-                if (! testCriticalPath(criticalPath)) {
+            final CriticalPath criticalPath = PathOutageManagerDaoImpl.getInstance().getCriticalPath(nodeId);
+            if (criticalPath != null && criticalPath.getIpAddress() != null) {
+                if (!testCriticalPath(criticalPath)) {
                     LOG.debug("Critical path test failed for node {}", nodeId);
-                    
-                    // add eventReason, criticalPathIp, criticalPathService
-                    // parms
-                    
                     bldr.addParam(EventConstants.PARM_LOSTSERVICE_REASON, EventConstants.PARM_VALUE_PATHOUTAGE);
-                    bldr.addParam(EventConstants.PARM_CRITICAL_PATH_IP, criticalPath[0]);
-                    bldr.addParam(EventConstants.PARM_CRITICAL_PATH_SVC, criticalPath[1]);
-                    
+                    bldr.addParam(EventConstants.PARM_CRITICAL_PATH_IP, InetAddrUtils.str(criticalPath.getIpAddress()));
+                    bldr.addParam(EventConstants.PARM_CRITICAL_PATH_SVC, criticalPath.getServiceName());
                 } else {
                     LOG.debug("Critical path test passed for node {}", nodeId);
                 }
@@ -444,16 +439,8 @@ public class DefaultPollContext implements PollContext, EventListener {
         LOG.trace("onEvent: processing of pollEvent completed: {}", pollEvent);
     }
 
-    boolean testCriticalPath(String[] criticalPath) {
-        if (criticalPath == null || criticalPath.length < 2) {
-            LOG.error("testCriticalPath: illegal arguments, ignoring.");
-            return true;
-        }
-        final InetAddress ipAddress = InetAddressUtils.addr(criticalPath[0]);
-        if (ipAddress == null) {
-            LOG.error("testCriticalPath: failed to convert string address to InetAddress {}", criticalPath[0]);
-            return true;
-        }
+    private boolean testCriticalPath(CriticalPath criticalPath) {
+        final InetAddress ipAddress = criticalPath.getIpAddress();
         boolean available = false;
         try {
             int retries = OpennmsServerConfigFactory.getInstance().getDefaultCriticalPathRetries();
@@ -466,11 +453,11 @@ public class DefaultPollContext implements PollContext, EventListener {
             LOG.warn("Pinger failed to ping {}", ipAddress, e);
             available = false;
         }
-        LOG.debug("testCriticalPath: checking {}@{}, available ? {}", criticalPath[1], criticalPath[0], available);
+        LOG.debug("testCriticalPath: checking {}@{}, available ? {}", criticalPath.getServiceName(), ipAddress, available);
         return available;
     }
 
-    String getNodeLabel(int nodeId) {
+    private String getNodeLabel(int nodeId) {
         String nodeLabel = null;
         try {
             nodeLabel = getQueryManager().getNodeLabel(nodeId);

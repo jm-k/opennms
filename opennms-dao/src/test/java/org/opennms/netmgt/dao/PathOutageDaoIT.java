@@ -79,8 +79,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 @JUnitConfigurationEnvironment
 @JUnitTemporaryDatabase
 public class PathOutageDaoIT implements InitializingBean {
-    @Autowired
-    private DistPollerDao m_distPollerDao;
 
     @Autowired
     private MonitoringLocationDao m_locationDao;
@@ -89,19 +87,10 @@ public class PathOutageDaoIT implements InitializingBean {
     private NodeDao m_nodeDao;
 
     @Autowired
-    private IpInterfaceDao m_ipInterfaceDao;
-
-    @Autowired
-    private MonitoredServiceDao m_monitoredServiceDao;
-
-    @Autowired
     private PathOutageDao m_pathOutageDao;
 
     @Autowired
     private ServiceTypeDao m_serviceTypeDao;
-
-    @Autowired
-    private EventDao m_eventDao;
 
     @Autowired
     TransactionTemplate m_transTemplate;

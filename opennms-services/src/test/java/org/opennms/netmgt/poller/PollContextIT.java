@@ -48,6 +48,7 @@ import org.opennms.core.test.db.MockDatabase;
 import org.opennms.core.test.db.TemporaryDatabaseAware;
 import org.opennms.core.test.db.annotations.JUnitTemporaryDatabase;
 import org.opennms.core.utils.InetAddressUtils;
+import org.opennms.netmgt.dao.api.CriticalPath;
 import org.opennms.netmgt.dao.api.NodeDao;
 import org.opennms.netmgt.dao.api.PathOutageDao;
 import org.opennms.netmgt.dao.api.PathOutageManager;
@@ -62,6 +63,7 @@ import org.opennms.netmgt.model.OnmsPathOutage;
 import org.opennms.netmgt.poller.pollables.PollEvent;
 import org.opennms.netmgt.poller.pollables.PollableNetwork;
 import org.opennms.netmgt.poller.pollables.PollableService;
+import org.opennms.netmgt.snmp.InetAddrUtils;
 import org.opennms.netmgt.xml.event.Event;
 import org.opennms.test.JUnitConfigurationEnvironment;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -380,8 +382,8 @@ public class PollContextIT implements TemporaryDatabaseAware<MockDatabase> {
         m_pathOutageDao.save(pathOutage);
         m_pathOutageDao.flush();
         m_pollerConfig.setPathOutageEnabled(true);
-        String[] paths = m_pathOutageManager.getCriticalPath(1);
-        Assert.assertEquals("169.254.0.1", paths[0]);
+        CriticalPath path = m_pathOutageManager.getCriticalPath(1);
+        Assert.assertEquals(InetAddrUtils.addr("169.254.0.1"), path.getIpAddress());
 
         Event nodeEvent = m_pollContext.createEvent(EventConstants.NODE_DOWN_EVENT_UEI, 1, null, null, new Date(), String.valueOf(PollStatus.SERVICE_UNAVAILABLE));
         Assert.assertNotNull(nodeEvent);
