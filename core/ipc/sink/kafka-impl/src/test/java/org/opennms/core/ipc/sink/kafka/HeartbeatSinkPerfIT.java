@@ -45,9 +45,9 @@ import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.opennms.core.ipc.sink.api.MessageConsumer;
-import org.opennms.core.ipc.sink.api.MessageProducer;
-import org.opennms.core.ipc.sink.api.MessageProducerFactory;
+import org.opennms.core.ipc.sink.api.MessageDispatcherFactory;
 import org.opennms.core.ipc.sink.api.SinkModule;
+import org.opennms.core.ipc.sink.api.SyncDispatcher;
 import org.opennms.core.ipc.sink.kafka.heartbeat.Heartbeat;
 import org.opennms.core.ipc.sink.kafka.heartbeat.HeartbeatModule;
 import org.opennms.core.test.OpenNMSJUnit4ClassRunner;
@@ -149,14 +149,14 @@ public class HeartbeatSinkPerfIT extends KafkaTestCase {
         final HeartbeatConsumer consumer = new HeartbeatConsumer(parallelHeartbeatModule, receivedMeter);
         consumerManager.registerConsumer(consumer);
 
-        /* Start the producer */
-        final MessageProducerFactory remoteMessageProducerFactory = context.getRegistry().lookupByNameAndType("kafkaRemoteMessageProducerFactory", MessageProducerFactory.class);
-        final MessageProducer<Heartbeat> producer = remoteMessageProducerFactory.getProducer(HeartbeatModule.INSTANCE);
+        /* Start the dispatcher */
+        final MessageDispatcherFactory remoteMessageDispatcherFactory = context.getRegistry().lookupByNameAndType("kafkaRemoteMessageDispatcherFactory", MessageDispatcherFactory.class);
+        final SyncDispatcher<Heartbeat> dispatcher = remoteMessageDispatcherFactory.createSyncDispatcher(HeartbeatModule.INSTANCE);
 
         // Fire up the generators
         generators = new ArrayList<>(NUM_GENERATORS);
         for (int k = 0; k < NUM_GENERATORS; k++) {
-            final HeartbeatGenerator generator = new HeartbeatGenerator(producer, RATE_PER_GENERATOR, sentMeter, sendTimer);
+            final HeartbeatGenerator generator = new HeartbeatGenerator(dispatcher, RATE_PER_GENERATOR, sentMeter, sendTimer);
             generators.add(generator);
             generator.start();
         }
@@ -200,7 +200,7 @@ public class HeartbeatSinkPerfIT extends KafkaTestCase {
         }
     }
 
-    public static class HeartbeatConsumer implements MessageConsumer<Heartbeat> {
+    public static class HeartbeatConsumer implements MessageConsumer<Heartbeat,Heartbeat> {
 
         private final HeartbeatModule heartbeatModule;
         private final Meter receivedMeter;
@@ -211,7 +211,7 @@ public class HeartbeatSinkPerfIT extends KafkaTestCase {
         }
 
         @Override
-        public SinkModule<Heartbeat> getModule() {
+        public SinkModule<Heartbeat,Heartbeat> getModule() {
             return heartbeatModule;
         }
 
@@ -224,22 +224,22 @@ public class HeartbeatSinkPerfIT extends KafkaTestCase {
     public static class HeartbeatGenerator {
         Thread thread;
 
-        final MessageProducer<Heartbeat> producer;
+        final SyncDispatcher<Heartbeat> dispatcher;
         final double rate;
         final AtomicBoolean stopped = new AtomicBoolean(false);
         private final Meter sentMeter;
         private final Timer sendTimer;
 
-        public HeartbeatGenerator(MessageProducer<Heartbeat> producer, double rate) {
-            this.producer = producer;
+        public HeartbeatGenerator(SyncDispatcher<Heartbeat> dispatcher, double rate) {
+            this.dispatcher = dispatcher;
             this.rate = rate;
             MetricRegistry metrics = new MetricRegistry();
             this.sentMeter = metrics.meter("sent");
             this.sendTimer = metrics.timer("send");
         }
 
-        public HeartbeatGenerator(MessageProducer<Heartbeat> producer, double rate, Meter sentMeter, Timer sendTimer) {
-            this.producer = producer;
+        public HeartbeatGenerator(SyncDispatcher<Heartbeat> dispatcher, double rate, Meter sentMeter, Timer sendTimer) {
+            this.dispatcher = dispatcher;
             this.rate = rate;
             this.sentMeter = sentMeter;
             this.sendTimer = sendTimer;
@@ -251,11 +251,11 @@ public class HeartbeatSinkPerfIT extends KafkaTestCase {
             thread = new Thread(new Runnable() {
                 @Override
                 public void run() {
-
+                   
                     while(!stopped.get()) {
                         rateLimiter.acquire();
                         try (Context ctx = sendTimer.time()) {
-                            producer.send(new Heartbeat());
+                            dispatcher.send(new Heartbeat());
                             sentMeter.mark();
                         }
                     }

@@ -1,3 +1,31 @@
+/*******************************************************************************
+ * This file is part of OpenNMS(R).
+ *
+ * Copyright (C) 2016 The OpenNMS Group, Inc.
+ * OpenNMS(R) is Copyright (C) 1999-2016 The OpenNMS Group, Inc.
+ *
+ * OpenNMS(R) is a registered trademark of The OpenNMS Group, Inc.
+ *
+ * OpenNMS(R) is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License,
+ * or (at your option) any later version.
+ *
+ * OpenNMS(R) is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with OpenNMS(R).  If not, see:
+ *      http://www.gnu.org/licenses/
+ *
+ * For more information contact:
+ *     OpenNMS(R) Licensing <license@opennms.org>
+ *     http://www.opennms.org/
+ *     http://www.opennms.com/
+ *******************************************************************************/
+
 package org.opennms.core.ipc.sink.kafka;
 
 import java.util.Collection;
@@ -53,9 +81,9 @@ public class KafkaMessageConsumerManager implements MessageConsumerManager, Init
     @Value("${org.opennms.core.ipc.sink.kafka.groupId}")
     private String m_groupId;
 
-    private final ConcurrentMap<SinkModule<Message>,String> m_topicsByModule = new MapMaker().concurrencyLevel(2).makeMap();
-    private final ConcurrentMap<String,SinkModule<Message>> m_modulesByTopic = new MapMaker().concurrencyLevel(2).makeMap();
-    private final ConcurrentMap<SinkModule<Message>,TopicProcessor<Message>> m_topicProcessorsByModule = new MapMaker().concurrencyLevel(2).makeMap();
+    private final ConcurrentMap<SinkModule<Message,Message>,String> m_topicsByModule = new MapMaker().concurrencyLevel(2).makeMap();
+    private final ConcurrentMap<String,SinkModule<Message,Message>> m_modulesByTopic = new MapMaker().concurrencyLevel(2).makeMap();
+    private final ConcurrentMap<SinkModule<Message,Message>,TopicProcessor<Message,Message>> m_topicProcessorsByModule = new MapMaker().concurrencyLevel(2).makeMap();
 
     private Properties m_config;
     private ConsumerReader m_consumerReader;
@@ -86,13 +114,13 @@ public class KafkaMessageConsumerManager implements MessageConsumerManager, Init
     }
 
     @Override
-    public <T extends Message> void dispatch(final SinkModule<T> module, final T message) {
+    public <S extends Message, T extends Message> void dispatch(final SinkModule<S,T> module, final T message) {
         m_topicProcessorsByModule.get(module).dispatch(message);
     }
 
     @SuppressWarnings("unchecked")
     @Override
-    public <T extends Message> void registerConsumer(final MessageConsumer<T> consumer) throws Exception {
+    public <S extends Message, T extends Message> void registerConsumer(final MessageConsumer<S,T> consumer) throws Exception {
         if (consumer == null) {
             return;
         }
@@ -100,23 +128,23 @@ public class KafkaMessageConsumerManager implements MessageConsumerManager, Init
         try (MDCCloseable mdc = Logging.withPrefixCloseable(MessageConsumerManager.LOG_PREFIX)) {
             LOG.info("Registering consumer: {}", consumer);
 
-            final SinkModule<T> module = consumer.getModule();
+            final SinkModule<S,T> module = consumer.getModule();
 
             final JmsQueueNameFactory topicFactory = new JmsQueueNameFactory(KafkaSinkConstants.KAFKA_TOPIC_PREFIX, module.getId());
             final String topic = topicFactory.getName();
 
-            m_topicsByModule.put((SinkModule<Message>) module, topic);
-            m_modulesByTopic.put(topic, (SinkModule<Message>) module);
+            m_topicsByModule.put((SinkModule<Message,Message>) module, topic);
+            m_modulesByTopic.put(topic, (SinkModule<Message,Message>) module);
 
             if (!m_topicProcessorsByModule.containsKey(module)) {
-                final TopicProcessor<Message> newTopicProcessor = new TopicProcessor<Message>((SinkModule<Message>) module);
+                final TopicProcessor<Message,Message> newTopicProcessor = new TopicProcessor<>((SinkModule<Message,Message>) module);
                 for (int i=0; i < module.getNumConsumerThreads(); i++) {
                     m_pool.submit(newTopicProcessor);
                 }
-                m_topicProcessorsByModule.put((SinkModule<Message>) module, newTopicProcessor);
+                m_topicProcessorsByModule.put((SinkModule<Message,Message>) module, newTopicProcessor);
             }
-            TopicProcessor<Message> tp = m_topicProcessorsByModule.get((SinkModule<Message>) module);
-            tp.addConsumer((MessageConsumer<Message>) consumer);
+            TopicProcessor<Message,Message> tp = m_topicProcessorsByModule.get((SinkModule<Message,Message>) module);
+            tp.addConsumer((MessageConsumer<Message,Message>) consumer);
 
             startKafkaConsumerReaderIfNecessary();
             m_consumerReader.subscribe(m_topicsByModule.values());
@@ -125,18 +153,18 @@ public class KafkaMessageConsumerManager implements MessageConsumerManager, Init
 
     @SuppressWarnings("unchecked")
     @Override
-    public <T extends Message> void unregisterConsumer(final MessageConsumer<T> consumer) throws Exception {
+    public <S extends Message, T extends Message> void unregisterConsumer(final MessageConsumer<S,T> consumer) throws Exception {
         try(MDCCloseable mdc = Logging.withPrefixCloseable(MessageConsumerManager.LOG_PREFIX)) {
             LOG.info("Unregistering consumer: {}", consumer);
 
-            final SinkModule<T> module = consumer.getModule();
+            final SinkModule<S,T> module = consumer.getModule();
 
             final JmsQueueNameFactory topicFactory = new JmsQueueNameFactory(KafkaSinkConstants.KAFKA_TOPIC_PREFIX, module.getId());
             final String topic = topicFactory.getName();
 
-            final TopicProcessor<Message> tp = m_topicProcessorsByModule.get(module);
+            final TopicProcessor<Message,Message> tp = m_topicProcessorsByModule.get(module);
             if (tp != null) {
-                tp.removeConsumer((MessageConsumer<Message>) consumer);
+                tp.removeConsumer((MessageConsumer<Message,Message>) consumer);
 
                 if (tp.size() == 0) {
                     m_modulesByTopic.remove(topic);
@@ -155,9 +183,9 @@ public class KafkaMessageConsumerManager implements MessageConsumerManager, Init
     }
 
     void unregisterAllConsumers() throws Exception {
-        for (final TopicProcessor<Message> tp : m_topicProcessorsByModule.values()) {
-            final Collection<MessageConsumer<Message>> consumers = tp.getConsumers();
-            for (final MessageConsumer<Message> consumer : consumers) {
+        for (final TopicProcessor<Message,Message> tp : m_topicProcessorsByModule.values()) {
+            final Collection<MessageConsumer<Message,Message>> consumers = tp.getConsumers();
+            for (final MessageConsumer<Message,Message> consumer : consumers) {
                 unregisterConsumer(consumer);
             }
         }
@@ -203,8 +231,8 @@ public class KafkaMessageConsumerManager implements MessageConsumerManager, Init
         }
     }
 
-    protected TopicProcessor<Message> getTopicProcessor(final String topic) {
-        final SinkModule<Message> module = m_modulesByTopic.get(topic);
+    protected TopicProcessor<Message,Message> getTopicProcessor(final String topic) {
+        final SinkModule<Message,Message> module = m_modulesByTopic.get(topic);
         return m_topicProcessorsByModule.get(module);
     }
 
@@ -265,7 +293,7 @@ public class KafkaMessageConsumerManager implements MessageConsumerManager, Init
                 LOG.debug("ConsumerReader: Got {} records.", records.count());
                 for (final ConsumerRecord<String, String> record : records) {
                     final String topic = record.topic();
-                    final TopicProcessor<Message> tp = getTopicProcessor(topic);
+                    final TopicProcessor<Message,Message> tp = getTopicProcessor(topic);
                     tp.queue(record);
                 }
             }
@@ -274,22 +302,22 @@ public class KafkaMessageConsumerManager implements MessageConsumerManager, Init
         }
     }
 
-    private static final class TopicProcessor<T extends Message> implements Runnable {
-        private final SinkModule<T> m_module;
+    private static final class TopicProcessor<S extends Message, T extends Message> implements Runnable {
+        private final SinkModule<S,T> m_module;
         private final String m_topic;
 
-        private final Set<MessageConsumer<T>> m_consumers = new CopyOnWriteArraySet<>();
+        private final Set<MessageConsumer<S,T>> m_consumers = new CopyOnWriteArraySet<>();
         private final int m_queueSize = 100; // TODO make configurable (in SinkModule?)
         private final LinkedBlockingQueue<ConsumerRecord<String, String>> m_queue = new LinkedBlockingQueue<>(m_queueSize );
 
-        public TopicProcessor(final SinkModule<T> module) {
+        public TopicProcessor(final SinkModule<S,T> module) {
             m_module = module;
             final JmsQueueNameFactory topicFactory = new JmsQueueNameFactory(KafkaSinkConstants.KAFKA_TOPIC_PREFIX, module.getId());
             m_topic = topicFactory.getName();
             LOG.info("TopicProcessor({}): Initialized.", m_topic);
         }
 
-        public Collection<MessageConsumer<T>> getConsumers() {
+        public Collection<MessageConsumer<S,T>> getConsumers() {
             return m_consumers;
         }
 
@@ -297,12 +325,12 @@ public class KafkaMessageConsumerManager implements MessageConsumerManager, Init
             return m_consumers.size();
         }
 
-        public void addConsumer(final MessageConsumer<T> consumer) {
+        public void addConsumer(final MessageConsumer<S,T> consumer) {
             LOG.debug("TopicProcessor({}): Adding consumer: {}", m_topic, consumer);
             m_consumers.add(consumer);
         }
 
-        public void removeConsumer(final MessageConsumer<T> consumer) {
+        public void removeConsumer(final MessageConsumer<S,T> consumer) {
             LOG.debug("TopicProcessor({}): Removing consumer: {}", m_topic, consumer);
             m_consumers.remove(consumer);
         }

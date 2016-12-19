@@ -86,7 +86,6 @@ public abstract class KafkaTestCase extends CamelBlueprintTest {
         properties.put("log.dir", "target/kafka-log");
         properties.put("port", String.valueOf(kafkaPort.get()));
         properties.put("zookeeper.connect", localhost + ":" + zookeeperPort.get());
-        //properties.put("zookeeper.connect",spec.getConnectString());
         
         System.err.println("Kafka server properties: " + properties);
         try {
@@ -96,7 +95,7 @@ public abstract class KafkaTestCase extends CamelBlueprintTest {
             final Buffer<KafkaMetricsReporter> metricsList = scala.collection.JavaConversions.asScalaBuffer(kmrList);
             kafkaServer = new KafkaServer(kafkaConfig, new SystemTime(), Option.<String>empty(), metricsList);
             kafkaServer.startup();
-            Thread.sleep(2000);
+            Thread.sleep(5000);
         } catch(final Exception e) {
             e.printStackTrace();
         }

@@ -43,13 +43,13 @@ import org.apache.camel.util.KeyValueHolder;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.opennms.core.ipc.sink.api.MessageConsumer;
-import org.opennms.core.ipc.sink.api.MessageProducer;
-import org.opennms.core.ipc.sink.api.MessageProducerFactory;
+import org.opennms.core.ipc.sink.api.MessageDispatcherFactory;
 import org.opennms.core.ipc.sink.api.SinkModule;
+import org.opennms.core.ipc.sink.api.SyncDispatcher;
+import org.opennms.core.ipc.sink.common.ThreadLockingMessageConsumer;
 import org.opennms.core.ipc.sink.kafka.HeartbeatSinkPerfIT.HeartbeatGenerator;
 import org.opennms.core.ipc.sink.kafka.heartbeat.Heartbeat;
 import org.opennms.core.ipc.sink.kafka.heartbeat.HeartbeatModule;
-import org.opennms.core.ipc.sink.test.ThreadLockingMessageConsumer;
 import org.opennms.core.test.OpenNMSJUnit4ClassRunner;
 import org.opennms.minion.core.api.MinionIdentity;
 import org.opennms.test.JUnitConfigurationEnvironment;
@@ -69,7 +69,7 @@ public class HeartbeatSinkBlueprintIT extends KafkaTestCase {
     private static final String REMOTE_LOCATION_NAME = "remote";
 
     @Autowired
-    private MessageProducerFactory localMessageProducerFactory;
+    private MessageDispatcherFactory localMessageDispatcherFactory;
 
     @Autowired
     private KafkaMessageConsumerManager consumerManager;
@@ -120,9 +120,9 @@ public class HeartbeatSinkBlueprintIT extends KafkaTestCase {
         HeartbeatModule module = new HeartbeatModule();
 
         AtomicInteger heartbeatCount = new AtomicInteger();
-        final MessageConsumer<Heartbeat> heartbeatConsumer = new MessageConsumer<Heartbeat>() {
+        final MessageConsumer<Heartbeat,Heartbeat> heartbeatConsumer = new MessageConsumer<Heartbeat,Heartbeat>() {
             @Override
-            public SinkModule<Heartbeat> getModule() {
+            public SinkModule<Heartbeat,Heartbeat> getModule() {
                 return module;
             }
 
@@ -138,13 +138,14 @@ public class HeartbeatSinkBlueprintIT extends KafkaTestCase {
             /* it takes a while for the new kafka to be ready with new topics I guess? */
             Thread.sleep(5000);
     
-            final MessageProducer<Heartbeat> localProducer = localMessageProducerFactory.getProducer(module);
-            localProducer.send(new Heartbeat());
+            final SyncDispatcher<Heartbeat> localDispatcher = localMessageDispatcherFactory.createSyncDispatcher(module);
+            localDispatcher.send(new Heartbeat());
             await().atMost(1, MINUTES).until(() -> heartbeatCount.get(), equalTo(1));
     
-            final MessageProducerFactory remoteMessageProducerFactory = context.getRegistry().lookupByNameAndType("kafkaRemoteMessageProducerFactory", MessageProducerFactory.class);
-            MessageProducer<Heartbeat> remoteProducer = remoteMessageProducerFactory.getProducer(module);
-            remoteProducer.send(new Heartbeat());
+            final MessageDispatcherFactory remoteMessageDispatcherFactory = context.getRegistry().lookupByNameAndType("kafkaRemoteMessageDispatcherFactory", MessageDispatcherFactory.class);
+            final SyncDispatcher<Heartbeat> dispatcher = remoteMessageDispatcherFactory.createSyncDispatcher(HeartbeatModule.INSTANCE);
+
+            dispatcher.send(new Heartbeat());
             await().atMost(1, MINUTES).until(() -> heartbeatCount.get(), equalTo(2));
         } finally {
             consumerManager.unregisterConsumer(heartbeatConsumer);
@@ -162,7 +163,7 @@ public class HeartbeatSinkBlueprintIT extends KafkaTestCase {
             }
         };
 
-        final ThreadLockingMessageConsumer<Heartbeat> consumer = new ThreadLockingMessageConsumer<>(parallelHeartbeatModule);
+        final ThreadLockingMessageConsumer<Heartbeat,Heartbeat> consumer = new ThreadLockingMessageConsumer<>(parallelHeartbeatModule);
 
         final CompletableFuture<Integer> future = consumer.waitForThreads(NUM_CONSUMER_THREADS);
 
@@ -172,10 +173,10 @@ public class HeartbeatSinkBlueprintIT extends KafkaTestCase {
             /* it takes a while for the new kafka to be ready with new topics I guess? */
             Thread.sleep(5000);
     
-            final MessageProducerFactory remoteMessageProducerFactory = context.getRegistry().lookupByNameAndType("kafkaRemoteMessageProducerFactory", MessageProducerFactory.class);
-            final MessageProducer<Heartbeat> producer = remoteMessageProducerFactory.getProducer(HeartbeatModule.INSTANCE);
+            final MessageDispatcherFactory remoteMessageDispatcherFactory = context.getRegistry().lookupByNameAndType("kafkaRemoteMessageDispatcherFactory", MessageDispatcherFactory.class);
+            final SyncDispatcher<Heartbeat> dispatcher = remoteMessageDispatcherFactory.createSyncDispatcher(HeartbeatModule.INSTANCE);
     
-            final HeartbeatGenerator generator = new HeartbeatGenerator(producer, 100.0);
+            final HeartbeatGenerator generator = new HeartbeatGenerator(dispatcher, 100.0);
             generator.start();
     
             // Wait until we have NUM_CONSUMER_THREADS locked

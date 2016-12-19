@@ -51,6 +51,6 @@
 
   <bean id="kafkaMessageConsumerManager" class="org.opennms.core.ipc.sink.kafka.KafkaMessageConsumerManager" />
 
-  <bean id="kafkaLocalMessageProducerFactory" class="org.opennms.core.ipc.sink.kafka.LocalMessageProducerFactory" />
+  <bean id="kafkaLocalMessageDispatcherFactory" class="org.opennms.core.ipc.sink.kafka.KafkaLocalMessageDispatcherFactory" />
 
 </beans>

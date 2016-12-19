@@ -30,6 +30,4 @@ package org.opennms.core.ipc.sink.kafka;
 
 public interface KafkaSinkConstants {
     static String KAFKA_TOPIC_PREFIX = "Sink";
-    static String KAFKA_TOPIC_HEADER = "KafkaTopic";
-    static String CAMEL_KAFKA_REQUEST_TIMEOUT_HEADER = "requestTimeoutMs";
 }

@@ -25,29 +25,18 @@
 
     <bean id="partitionKeyGenerator" class="org.opennms.core.camel.RandomPartitionKeyGenerator"/>
 
-	<bean id="kafkaRemoteMessageProducerFactory" class="org.opennms.core.ipc.sink.kafka.KafkaRemoteMessageProducerFactory">
+	<bean id="kafkaRemoteMessageDispatcherFactory" class="org.opennms.core.ipc.sink.kafka.KafkaRemoteMessageDispatcherFactory"
+	  init-method="afterPropertiesSet" destroy-method="unregister">
 	  <property name="kafkaAddress" value="${kafkaAddress}" />
 	  <property name="zookeeperHost" value="${zookeeperHost}" />
 	  <property name="zookeeperPort" value="${zookeeperPort}" />
 	  <property name="groupId" value="${groupId}" />
 	</bean>
 
-    <service ref="kafkaRemoteMessageProducerFactory" interface="org.opennms.core.ipc.sink.api.MessageProducerFactory"/>
+    <service ref="kafkaRemoteMessageDispatcherFactory" interface="org.opennms.core.ipc.sink.api.MessageDispatcherFactory"/>
 
+    <!-- this exists only to make the CamelBlueprintTest happy -->
     <camelContext id="sinkClient" xmlns="http://camel.apache.org/schema/blueprint">
     </camelContext>
-
-    <!-- 
-    <camelContext id="sinkClient" xmlns="http://camel.apache.org/schema/blueprint">
-      <route id="sinkClient">
-        <from uri="direct:sendMessage" />
-        <setExchangePattern pattern="InOnly"/>
-        <setHeader headerName="kafka.PARTITION_KEY">
-          <simple>${bean:partitionKeyGenerator.getPartitionKey()}</simple>
-        </setHeader>
-        <to uri="kafka:{{kafkaAddress}}?producerType=async&amp;zookeeperHost={{zookeeperHost}}&amp;zookeeperPort={{zookeeperPort}}&amp;groupId={{groupId}}&amp;serializerClass=kafka.serializer.StringEncoder"/>
-      </route>
-    </camelContext>
-    -->
 
 </blueprint>
