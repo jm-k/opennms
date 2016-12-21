@@ -109,17 +109,11 @@
 
     <!-- need to override camel-kafka because it pulls in a Zookeeper version that has bad OSGi metadata -->
     <feature name='onms-camel-kafka' version='${camelVersion}' resolver='(obr)' start-level='50'>
-      <bundle dependency="true">mvn:org.scala-lang/scala-library/2.10.4</bundle>
-      <!-- NMS-8929: Upgrade Zookeeper to fix bug https://issues.apache.org/jira/browse/ZOOKEEPER-2056 -->
-      <!-- <bundle dependency="true">mvn:org.apache.zookeeper/zookeeper/3.4.6</bundle> -->
-      <bundle dependency="true">mvn:org.apache.zookeeper/zookeeper/3.4.7</bundle>
-      <bundle dependency="true">wrap:mvn:com.yammer.metrics/metrics-core/2.2.0$Bundle-Version=2.2.0&amp;Export-Package=*;-noimport:=true;version="2.2.0"</bundle>
-      <bundle dependency="true">wrap:mvn:com.yammer.metrics/metrics-annotation/2.2.0$Bundle-Version=2.2.0&amp;Export-Package=*;-noimport:=true;version="2.2.0"</bundle>
-      <bundle dependency="true">mvn:org.apache.servicemix.bundles/org.apache.servicemix.bundles.kafka_2.10/0.10.1.0_1</bundle>
-      <!-- HZN-811: Missing dependency on zkclient, can be removed when we upgrade to Camel 2.16.0+ -->
-      <bundle dependency="true">wrap:mvn:com.101tec/zkclient/0.3$Bundle-Version=0.3&amp;Export-Package=*;-noimport:=true;version="0.3"</bundle>
+      <feature version='${project.version}'>opennms-kafka</feature>
       <feature version="2.14.1">camel-core</feature>
       <bundle>mvn:org.apache.camel/camel-kafka/2.14.1</bundle>
+      <!-- HZN-811: Missing dependency on zkclient, can be removed when we upgrade to Camel 2.16.0+ -->
+      <bundle dependency="true">wrap:mvn:com.101tec/zkclient/0.3$Bundle-Version=0.3&amp;Export-Package=*;-noimport:=true;version="0.3"</bundle>
     </feature>
 
     <feature name="opennms-elasticsearch-event-forwarder" description="OpenNMS :: Features :: Elasticsearch :: Event Forwarder" version="${project.version}">
@@ -587,10 +581,24 @@
       <bundle>mvn:org.opennms/opennms-config/${project.version}</bundle>
     </feature>
 
+    <feature name='opennms-kafka' description="OpenNMS :: Features :: Kafka" version="${project.version}">
+      <bundle dependency="true">mvn:org.scala-lang/scala-library/2.10.4</bundle>
+      <!-- NMS-8929: Upgrade Zookeeper to fix bug https://issues.apache.org/jira/browse/ZOOKEEPER-2056 -->
+      <!-- <bundle dependency="true">mvn:org.apache.zookeeper/zookeeper/3.4.6</bundle> -->
+      <bundle dependency="true">mvn:org.apache.zookeeper/zookeeper/3.4.7</bundle>
+      <bundle dependency="true">wrap:mvn:com.yammer.metrics/metrics-core/2.2.0$Bundle-Version=2.2.0&amp;Export-Package=*;-noimport:=true;version="2.2.0"</bundle>
+      <bundle dependency="true">wrap:mvn:com.yammer.metrics/metrics-annotation/2.2.0$Bundle-Version=2.2.0&amp;Export-Package=*;-noimport:=true;version="2.2.0"</bundle>
+      <bundle dependency="true">mvn:org.apache.servicemix.bundles/org.apache.servicemix.bundles.kafka_2.10/0.10.1.0_1</bundle>
+      <bundle dependency="true">mvn:org.apache.servicemix.bundles/org.apache.servicemix.bundles.kafka-clients/0.10.1.0_2</bundle>
+      <!-- this zkclient dependency is for the sink kafka-impl -->
+      <bundle dependency="true">wrap:mvn:com.101tec/zkclient/0.10$Bundle-Version=0.10&amp;Export-Package=*;-noimport:=true;version="0.10"</bundle>
+    </feature>
+
     <feature name="opennms-core-ipc-sink" description="OpenNMS :: Core :: IPC :: Sink" version="${project.version}">
       <feature>org.json</feature>
       <feature>javax.mail</feature>
       <feature>opennms-core-camel</feature>
+      <feature>opennms-kafka</feature>
       <feature>camel-blueprint</feature>
       <feature>rate-limited-logger</feature>
       <feature>dropwizard-metrics</feature>
@@ -857,6 +865,7 @@
       <feature>camel-core</feature>
       <feature>camel-http</feature>
       <feature>onms-camel-kafka</feature>
+      <feature>opennms-kafka</feature>
       <feature>camel-netty</feature>
       <feature version="${guavaVersion}">guava</feature>
 

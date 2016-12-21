@@ -28,9 +28,15 @@
 
 package org.opennms.core.ipc.sink.kafka;
 
+import org.opennms.core.camel.JmsQueueNameFactory;
 import org.opennms.core.ipc.sink.api.Message;
+import org.opennms.core.ipc.sink.api.MessageConsumerManager;
 import org.opennms.core.ipc.sink.api.SinkModule;
 import org.opennms.core.ipc.sink.common.AbstractMessageDispatcherFactory;
+import org.opennms.core.logging.Logging;
+import org.opennms.core.logging.Logging.MDCCloseable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -41,12 +47,24 @@ import com.codahale.metrics.JmxReporter;
  *
  * @author ranger
  */
-public class KafkaLocalMessageDispatcherFactory extends AbstractMessageDispatcherFactory<Void> implements InitializingBean {
+public class KafkaLocalMessageDispatcherFactory extends AbstractMessageDispatcherFactory<String> implements InitializingBean {
+    private static final Logger LOG = LoggerFactory.getLogger(KafkaLocalMessageDispatcherFactory.class);
 
     @Autowired
     private KafkaMessageConsumerManager messageConsumerManager;
 
-    public <S extends Message, T extends Message> void dispatch(SinkModule<S, T> module, Void metadata, T message) {
+    @Override
+    public <S extends Message, T extends Message> String getModuleMetadata(final SinkModule<S, T> module) {
+        final JmsQueueNameFactory queueNameFactory = new JmsQueueNameFactory(KafkaSinkConstants.KAFKA_TOPIC_PREFIX, module.getId());
+        return queueNameFactory.getName();
+    }
+
+    public <S extends Message, T extends Message> void dispatch(final SinkModule<S, T> module, final String topic, final T message) {
+        if (LOG.isTraceEnabled()) {
+            try (MDCCloseable mdc = Logging.withPrefixCloseable(MessageConsumerManager.LOG_PREFIX)) {
+                LOG.trace("dispatch({}): sending message {}", topic, message);
+            }
+        }
         messageConsumerManager.dispatch(module, message);
     }
 

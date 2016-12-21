@@ -35,8 +35,11 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.opennms.core.camel.JmsQueueNameFactory;
 import org.opennms.core.ipc.sink.api.Message;
+import org.opennms.core.ipc.sink.api.MessageConsumerManager;
 import org.opennms.core.ipc.sink.api.SinkModule;
 import org.opennms.core.ipc.sink.common.AbstractMessageDispatcherFactory;
+import org.opennms.core.logging.Logging;
+import org.opennms.core.logging.Logging.MDCCloseable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
@@ -66,48 +69,59 @@ public class KafkaRemoteMessageDispatcherFactory extends AbstractMessageDispatch
     @Override
     public <S extends Message, T extends Message> void dispatch(SinkModule<S, T> module, String topic, T message) {
         startKafkaConsumerIfNecessary();
-        LOG.debug("dispatch({}): sending message {}", topic, message);
-        final ProducerRecord<String,String> record = new ProducerRecord<>(topic, module.marshal(message));
-        m_producer.send(record);
+        if (LOG.isTraceEnabled()) {
+            try (MDCCloseable mdc = Logging.withPrefixCloseable(MessageConsumerManager.LOG_PREFIX)) {
+                LOG.trace("dispatch({}): sending message {}", topic, message);
+            }
+        }
+        try (MDCCloseable mdc = Logging.withPrefixCloseable(MessageConsumerManager.LOG_PREFIX)) {
+            final ProducerRecord<String,String> record = new ProducerRecord<>(topic, module.marshal(message));
+            m_producer.send(record);
+        }
     }
     
     private void startKafkaConsumerIfNecessary() {
         if (m_producer == null) {
-            m_producer = new KafkaProducer<>(m_config);
-            LOG.debug("KafkaRemoteMessageDispatcherFactory: started Kafka producer using config {}", m_config);
+            try (MDCCloseable mdc = Logging.withPrefixCloseable(MessageConsumerManager.LOG_PREFIX)) {
+                Thread.currentThread().setContextClassLoader(null);
+                m_producer = new KafkaProducer<>(m_config);
+                LOG.debug("KafkaRemoteMessageDispatcherFactory: started Kafka producer using config {}", m_config);
+            }
         }
     }
 
     @Override
     public void afterPropertiesSet() throws Exception {
-        Objects.requireNonNull(m_kafkaAddress);
-        Objects.requireNonNull(m_zookeeperHost);
-        Objects.requireNonNull(m_zookeeperPort);
-        Objects.requireNonNull(m_groupId);
+        try (MDCCloseable mdc = Logging.withPrefixCloseable(MessageConsumerManager.LOG_PREFIX)) {
+            Objects.requireNonNull(m_kafkaAddress);
+            Objects.requireNonNull(m_zookeeperHost);
+            Objects.requireNonNull(m_zookeeperPort);
+            Objects.requireNonNull(m_groupId);
+    
+            registerJmxReporter();
+    
+            m_config = new Properties();
+            m_config.put("bootstrap.servers", m_kafkaAddress);
+            m_config.put("acks", "all");
+            m_config.put("retries", 0);
+            /*
+            m_config.put("batch.size", 16384);
+            m_config.put("linger.ms", 1);
+            m_config.put("buffer.memory", 33554432);
+            */
+            m_config.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+            m_config.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+    
+            // TODO implement a partitioning scheme
+            //m_config.put("partitioner.class", "");
+    
+            if (m_producer != null) {
+                m_producer.close();
+                m_producer = null;
+            }
 
-        registerJmxReporter();
-
-        m_config = new Properties();
-        m_config.put("bootstrap.servers", m_kafkaAddress);
-        m_config.put("acks", "all");
-        m_config.put("retries", 0);
-        /*
-        m_config.put("batch.size", 16384);
-        m_config.put("linger.ms", 1);
-        m_config.put("buffer.memory", 33554432);
-        */
-        m_config.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
-        m_config.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
-
-        // TODO implement a partitioning scheme
-        //m_config.put("partitioner.class", "");
-
-        if (m_producer != null) {
-            m_producer.close();
-            m_producer = null;
+            LOG.debug("KafkaRemoteMessageDispatcherFactory: initialized using kafkaAddress={}, zookeeperAddress={}, groupId={}", m_kafkaAddress, m_zookeeperHost + ":" + m_zookeeperPort, m_groupId);
         }
-
-        LOG.debug("KafkaRemoteMessageDispatcherFactory: initialized using config {}", m_config);
     }
 
     private void registerJmxReporter() {
