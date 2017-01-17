@@ -8,6 +8,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.opennms.core.test.MockLogAppender;
@@ -59,7 +60,23 @@ public class WingEventTranslation {
         m_translator.start();
         
     }
-
+	@After
+    public void tearDown() throws Exception {
+        m_eventMgr.finishProcessingEvents();
+        m_translator.stop();
+        sleep(200);
+        MockLogAppender.assertNoWarningsOrGreater();
+        m_db.drop();
+//        MockUtil.println("------------ End Test "+getName()+" --------------------------");
+//        super.tearDown();
+    }
+	private void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+        }
+    }
+    
 	private String getStandardConfig() throws IOException {
 		String filaname = "/wingevents/translator-configuration.xml";
 		assertNotNull(getClass().getResource(filaname));
