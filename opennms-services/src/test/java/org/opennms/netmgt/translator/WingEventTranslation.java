@@ -11,6 +11,7 @@ import java.nio.file.Paths;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.opennms.core.db.DataSourceFactory;
 import org.opennms.core.test.MockLogAppender;
 import org.opennms.core.test.db.MockDatabase;
 import org.opennms.netmgt.config.EventTranslatorConfigFactory;
@@ -37,7 +38,7 @@ public class WingEventTranslation {
 		
         MockLogAppender.setupLogging();
 
-        createMockNetwork();
+        createBasicMockNetwork();
         createMockDb();
         createAnticipators();
 
@@ -86,16 +87,27 @@ public class WingEventTranslation {
 		return new String(encoded, encoding);
 	}
 	private void createAnticipators() {
-		// TODO Auto-generated method stub
+        m_anticipator = new EventAnticipator();
+        m_outageAnticipator = new OutageAnticipator(m_db);
 		
 	}
-	private void createMockDb() {
-		// TODO Auto-generated method stub
+	private void createMockDb() throws Exception {
+
+        m_db = new MockDatabase();
+        m_db.populate(m_network);
+        DataSourceFactory.setInstance(m_db);
 		
 	}
-	private void createMockNetwork() {
-		// TODO Auto-generated method stub
-		
+	private void createBasicMockNetwork() {
+		//Basic network : controller ....
+		//No passive services
+	        m_network = new MockNetwork();
+	        m_network.setCriticalService("ICMP");
+	        m_network.addNode(1, "rfs-backup");
+	        m_network.addInterface("172.16.1.54");
+	        m_network.addService("ICMP");
+	        m_network.addService("WIngAP1");
+	        m_network.addService("WingAP2");
 	}
 	@Test
 	public void test() {
