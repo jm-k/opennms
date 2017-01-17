@@ -3,7 +3,10 @@ package org.opennms.netmgt.translator;
 import static org.junit.Assert.*;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -17,7 +20,7 @@ import org.opennms.netmgt.mock.OutageAnticipator;
 
 public class WingEventTranslation {
 	private EventTranslator m_translator;
-    private String m_passiveStatusConfiguration = getStandardConfig();
+	private String m_passiveStatusConfiguration;
     private MockEventIpcManager m_eventMgr;
     private MockDatabase m_db;
     private MockNetwork m_network;
@@ -27,6 +30,10 @@ public class WingEventTranslation {
 	@Before
     public void setUp() throws Exception {
 //        MockUtil.println("------------ Begin Test "+getName()+" --------------------------");
+
+    	m_passiveStatusConfiguration = getStandardConfig();
+		
+		
         MockLogAppender.setupLogging();
 
         createMockNetwork();
@@ -53,8 +60,13 @@ public class WingEventTranslation {
         
     }
 
-	private String getStandardConfig() {
-		return null;
+	private String getStandardConfig() throws IOException {
+		String filaname = "/wingevents/translator-configuration.xml";
+		assertNotNull(getClass().getResource(filaname));
+		String realFilenamegetClass = getClass().getResource(filaname).getFile();
+		byte[] encoded = Files.readAllBytes(Paths.get(realFilenamegetClass));
+		String encoding = "UTF-8";
+		return new String(encoded, encoding);
 	}
 	private void createAnticipators() {
 		// TODO Auto-generated method stub
