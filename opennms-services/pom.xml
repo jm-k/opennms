@@ -432,6 +432,12 @@
       <!-- <scope>test</scope> -->
     </dependency>
     <dependency>
+      <groupId>org.opennms.features.events</groupId>
+      <artifactId>org.opennms.features.events.traps</artifactId>
+      <!-- <scope>test</scope> -->
+    </dependency>
+    
+    <dependency>
       <groupId>org.mockito</groupId>
       <artifactId>mockito-all</artifactId>
       <scope>test</scope>
