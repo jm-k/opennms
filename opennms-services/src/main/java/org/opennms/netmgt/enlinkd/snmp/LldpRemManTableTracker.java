@@ -44,6 +44,8 @@ import org.opennms.netmgt.snmp.TableTracker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+
+
 public class LldpRemManTableTracker extends TableTracker {
 	
     private final static Logger LOG = LoggerFactory.getLogger(LldpRemManTableTracker.class);
@@ -137,7 +139,7 @@ public class LldpRemManTableTracker extends TableTracker {
         return lldpportid.toHexString();
     }
 
-
+    
     public static class LldpRemManRow extends SnmpRowResult {
 
 		public LldpRemManRow(int columnCount, SnmpInstId instance) {
@@ -148,21 +150,35 @@ public class LldpRemManTableTracker extends TableTracker {
 	    public Integer getLldpRemLocalPortNum() {
 	    	return getInstance().getSubIdAt(0);
 	    }*/
-	    public Integer getlldpRemManAddrSubtype() {
-	    	return getInstance().getSubIdAt(1);
-	    }
 	    public InetAddress getlldpRemManAddr() {
-	    	return InetAddressUtils.getInetAddress(getInstance().getIds(), 2, 4);
+	    	return InetAddressUtils.getInetAddress(getInstance().getIds(), 5, getlldpRemManAddrLength());
 	    }
+		public int getLLdpRemTimeMark() {
+			return getInstance().getSubIdAt(0);
+		}
+		public int getLLdpRemLocalPortNum() {
+			return getInstance().getSubIdAt(1);
+		}
+		public int getlldpRemIndex() {
+			return getInstance().getSubIdAt(2);
+		}
+	    public int getlldpRemManAddrSubtype() {
+	    	return getInstance().getSubIdAt(3);
+	    }
+		public int getlldpRemManAddrLength() {
+			return getInstance().getSubIdAt(4);
+		}
+		public int[] getlldpManIndex(){
+			 int[] result = {getLLdpRemTimeMark(), getLLdpRemLocalPortNum(), getlldpRemIndex()};
+			return  result;
+		}
 	    
 	    
 	    
     }
 
-	private LldpLink m_lldplink;
-
-    public LldpRemManTableTracker(LldpLink lldplink) {
-    	this(lldplink,null);
+    public LldpRemManTableTracker() {
+    	this(null);
     }
     
     /**
@@ -170,23 +186,11 @@ public class LldpRemManTableTracker extends TableTracker {
      *
      * @param rowProcessor a {@link org.opennms.netmgt.snmp.RowCallback} object.
      */
-    public LldpRemManTableTracker(LldpLink lldplink,final RowCallback rowProcessor) {
-        super(rowProcessor, augment(lldplink,s_lldpremtable_elemList));
-        m_lldplink = lldplink;
+    public LldpRemManTableTracker(final RowCallback rowProcessor) {
+        super(rowProcessor,s_lldpremtable_elemList);
     }
     
-    private static SnmpObjId[] augment(LldpLink lldplink, SnmpObjId[] sLldpremtableElemlist) {
-        for (int cpt = 0; cpt < s_lldpremtable_elemList.length; cpt++){
-        	final String subIndex = new StringBuilder(lldplink.getLLdpRemTimeMark())
-        			.append(".")
-        			.append(lldplink.getLldpLocalPortNum())
-        			.append(".")
-        			.append(lldplink.getLldpRemIndex()).toString();
-        	
-        	s_lldpremtable_elemList[cpt]=SnmpObjId.get(s_lldpremtable_elemList[cpt], subIndex);
-        }
-       return s_lldpremtable_elemList;
-	}
+    
 
 	/** {@inheritDoc} */
     @Override

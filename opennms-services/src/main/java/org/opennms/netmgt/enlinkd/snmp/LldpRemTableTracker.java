@@ -176,11 +176,18 @@ public class LldpRemTableTracker extends TableTracker {
 			super(columnCount, instance);
             LOG.debug( "column count = {}, instance = {}", columnCount, instance);
 		}
-    	
-	    public Integer getLldpRemLocalPortNum() {
+
+		final private Integer getLldpRemTimeMark() {
+			return getInstance().getSubIdAt(0);
+		}
+		final public Integer getLldpRemLocalPortNum() {
 	    	return getInstance().getSubIdAt(1);
 	    }
-	    
+
+		final private int getLldpRemIndex() {
+			return getInstance().getSubIdAt(2);
+		}
+
 	    public Integer getLldpRemChassisidSubtype() {
 	    	return getValue(LLDP_REM_CHASSIS_ID_SUBTYPE).toInt();
 	    }
@@ -232,17 +239,20 @@ public class LldpRemTableTracker extends TableTracker {
             LOG.info( "getLldpLink: row rem lldp port id subtype: {}", LldpPortIdSubType.getTypeString(getLldpRemPortidSubtype()));
  
             lldpLink.setLldpRemPortDescr(getLldpRemPortDescr());
-            
-            lldpLink.setLLdpRemTimeMark(getTimeMark());
-            
-            lldpLink.setLldpRemIndex(getInstance().getSubIdAt(2));
     		return lldpLink;
 	    }
 
-		private Integer getTimeMark() {
-			return getInstance().getSubIdAt(0);
+		public int[] getLldpRemRelIndex() {
+			final int[] result = {
+					getLldpRemTimeMark(),
+					getLldpRemLocalPortNum(),
+					getLldpRemIndex(),
+					
+			};
+			return result;
 		}
     }
+
 
     public LldpRemTableTracker() {
         super(s_lldpremtable_elemList);

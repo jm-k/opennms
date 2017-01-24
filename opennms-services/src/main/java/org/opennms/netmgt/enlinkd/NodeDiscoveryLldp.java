@@ -30,8 +30,9 @@ package org.opennms.netmgt.enlinkd;
 
 import static org.opennms.core.utils.InetAddressUtils.str;
 
+import java.net.InetAddress;
 import java.util.Date;
-import java.util.LinkedList;
+import java.util.List;
 
 import org.opennms.core.utils.LldpUtils.LldpChassisIdSubType;
 import org.opennms.netmgt.enlinkd.snmp.LldpLocPortGetter;
@@ -39,10 +40,13 @@ import org.opennms.netmgt.enlinkd.snmp.LldpLocalGroupTracker;
 import org.opennms.netmgt.enlinkd.snmp.LldpRemManTableTracker;
 import org.opennms.netmgt.enlinkd.snmp.LldpRemTableTracker;
 import org.opennms.netmgt.model.LldpLink;
+import org.opennms.netmgt.model.events.EventBuilder;
 import org.opennms.netmgt.snmp.SnmpUtils;
 import org.opennms.netmgt.snmp.SnmpWalker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.sun.tools.javac.util.Pair;
 
 /**
  * This class is designed to collect the necessary SNMP information from the
@@ -121,12 +125,16 @@ public final class NodeDiscoveryLldp extends NodeDiscovery {
         }
 
         final LldpLocPortGetter lldpLocPort = new LldpLocPortGetter(getPeer());
+        final RemManCollector remManCollector= new RemManCollector();
+        
         trackerName = "lldpRemTable";
-        LinkedList<LldpLink> lldpLinks = new LinkedList<LldpLink>();
         LldpRemTableTracker lldpRemTable = new LldpRemTableTracker() {
 
         	public void processLldpRemRow(final LldpRemRow row) {
-        		lldpLinks.add( row.getLldpLink(lldpLocPort));
+        		final LldpLink lldplink = row.getLldpLink(lldpLocPort);
+        		
+        		remManCollector.add(row.getLldpRemRelIndex(),lldplink);
+        	   
         	}
         };
 
@@ -147,25 +155,54 @@ public final class NodeDiscoveryLldp extends NodeDiscovery {
             LOG.error("run: collection interrupted, exiting",e);
             return;
         }
-
-        for (LldpLink lldplink: lldpLinks){
-        	trackerName = "lldpManTable";
-        	LldpRemManTableTracker lldpManTable = new LldpRemManTableTracker(lldplink) {
-
-            	public void processLldpRemRow(final LldpRemManRow row) {
-            	    System.out.println("******" +row.getlldpRemManAddr());
-            	}
-            };
-        	
-        	
-        	m_linkd.getQueryManager().store(getNodeId(),lldplink);
+        
+        trackerName = "lldpManTable";
+        LldpRemManTableTracker lldpManTable = new LldpRemManTableTracker() {
+    		@Override
+        	public void processLldpRemManRow(final LldpRemManRow row) {
+        		remManCollector.addToLldpLink(row.getlldpManIndex(),row.getlldpRemManAddr());
+        	}
+        };
+        walker = SnmpUtils.createWalker(getPeer(), trackerName, lldpManTable);
+        walker.start();
+        try {
+            walker.waitFor();
+            if (walker.timedOut()) {
+            	LOG.info(
+                        "run:Aborting node scan : Agent timed out while scanning the {} table", trackerName);
+            }  else if (walker.failed()) {
+            	LOG.info(
+                        "run:Aborting node scan : Agent failed while scanning the {} table: {}", trackerName,walker.getErrorMessage());
+            }
+        } catch (final InterruptedException e) {
+            LOG.error("run: collection interrupted, exiting",e);
+            return;
         }
-        /*
         
         
-        */
+        for (Pair<LldpLink, List<InetAddress>> lldplink : remManCollector.getValues()){
+        	m_linkd.getQueryManager().store(getNodeId(),lldplink.fst);
+        	for(InetAddress ia: lldplink.snd){
+        		sendremMgmtDiscoveredEvent(lldplink.fst,ia);
+        	}
+        	
+        }
+        
         m_linkd.getQueryManager().reconcileLldp(getNodeId(),now);
     }
+
+	private void sendremMgmtDiscoveredEvent(LldpLink lldpLink, InetAddress ia) {
+		 EventBuilder builder = new EventBuilder(
+                 "uei.opennms.org/internal/linkd/lldp/MgmtAddrDiscovered",
+                 "EnhancedLinkd");
+		 builder.setNodeid(getNodeId());
+		 builder.setInterface(getTarget());
+		 builder.addParam("runnable", getName());
+		 builder.addParam("mgmtAddress", str(ia));
+		 builder.addParam("chassisId", lldpLink.getLldpRemChassisId());
+		 builder.addParam("sysName", lldpLink.getLldpRemSysname());
+		 m_linkd.getEventForwarder().sendNow(builder.getEvent());
+	}
 
 	@Override
 	public String getInfo() {
