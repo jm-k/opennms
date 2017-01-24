@@ -29,8 +29,10 @@
 package org.opennms.netmgt.enlinkd.snmp;
 
 
+import java.net.InetAddress;
+
+import org.opennms.core.utils.InetAddressUtils;
 import org.opennms.core.utils.LldpUtils;
-import org.opennms.core.utils.LldpUtils.LldpChassisIdSubType;
 import org.opennms.core.utils.LldpUtils.LldpPortIdSubType;
 import org.opennms.netmgt.model.LldpLink;
 import org.opennms.netmgt.snmp.RowCallback;
@@ -42,56 +44,22 @@ import org.opennms.netmgt.snmp.TableTracker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class LldpRemTableTracker extends TableTracker {
-    private final static Logger LOG = LoggerFactory.getLogger(LldpRemTableTracker.class);
+public class LldpRemManTableTracker extends TableTracker {
 	
-    public static final SnmpObjId LLDP_REM_TABLE_ENTRY = SnmpObjId.get(".1.0.8802.1.1.2.1.4.1.1"); // start of table (GETNEXT)
+    private final static Logger LOG = LoggerFactory.getLogger(LldpRemManTableTracker.class);
+	
+    public static final SnmpObjId LLDP_MANADDR_TABLE_ENTRY = SnmpObjId.get(".1.0.8802.1.1.2.1.4.2.1"); // start of table (GETNEXT)
     
     
-    public final static SnmpObjId LLDP_REM_CHASSIS_ID_SUBTYPE = SnmpObjId.get(LLDP_REM_TABLE_ENTRY,"4");
-    public final static SnmpObjId LLDP_REM_CHASSIS_ID         = SnmpObjId.get(LLDP_REM_TABLE_ENTRY,"5");
-    public final static SnmpObjId LLDP_REM_PORT_ID_SUBTYPE    = SnmpObjId.get(LLDP_REM_TABLE_ENTRY,"6");
-    public final static SnmpObjId LLDP_REM_PORT_ID            = SnmpObjId.get(LLDP_REM_TABLE_ENTRY,"7");
-    public final static SnmpObjId LLDP_REM_PORT_DESCR         = SnmpObjId.get(LLDP_REM_TABLE_ENTRY,"8");
-    public final static SnmpObjId LLDP_REM_SYSNAME            = SnmpObjId.get(LLDP_REM_TABLE_ENTRY,"9");
+    public final static SnmpObjId LLDP_MAN_ADDR_SUBTYPE 	= SnmpObjId.get(LLDP_MANADDR_TABLE_ENTRY,"1");
+    public final static SnmpObjId LLDP_MAN_ADDR         	= SnmpObjId.get(LLDP_MANADDR_TABLE_ENTRY,"2");
+    public final static SnmpObjId LLDP_MAN_ADDR_IFSUBBYPE	= SnmpObjId.get(LLDP_MANADDR_TABLE_ENTRY,"4");
+    public final static SnmpObjId LLDP_MAN_ADDR_IFID		= SnmpObjId.get(LLDP_MANADDR_TABLE_ENTRY,"5");
+    public final static SnmpObjId LLDP_MAN_ADDR_OID         = SnmpObjId.get(LLDP_MANADDR_TABLE_ENTRY,"6");
 
     public static final SnmpObjId[] s_lldpremtable_elemList = new SnmpObjId[] {
-        
-        /**
-         *  "The type of encoding used to identify the chassis associated
-         *  with the remote system."
-         */
-        LLDP_REM_CHASSIS_ID_SUBTYPE,
-        
-        /**
-         * "The string value used to identify the chassis component
-         * associated with the remote system."
-         */
-       LLDP_REM_CHASSIS_ID,
-
-        /**
-         * "The type of port identifier encoding used in the associated
-         * 'lldpRemPortId' object."
-         */
-        LLDP_REM_PORT_ID_SUBTYPE,
-
-        /**
-         * "The string value used to identify the port component
-            associated with the remote system."
-         */
-        LLDP_REM_PORT_ID,
-        
-        /**
-         * 	"The string value used to identify the description of 
-         *  the given port associated with the remote system."
-         */
-        LLDP_REM_PORT_DESCR,
-
-        /**
-         * "The string value used to identify the port component
-         * associated with the remote system."
-         */
-        LLDP_REM_SYSNAME
+    		
+    	LLDP_MAN_ADDR_IFID,
 
     };
     
@@ -170,82 +138,31 @@ public class LldpRemTableTracker extends TableTracker {
     }
 
 
-    public static class LldpRemRow extends SnmpRowResult {
+    public static class LldpRemManRow extends SnmpRowResult {
 
-		public LldpRemRow(int columnCount, SnmpInstId instance) {
+		public LldpRemManRow(int columnCount, SnmpInstId instance) {
 			super(columnCount, instance);
             LOG.debug( "column count = {}, instance = {}", columnCount, instance);
 		}
-    	
+    	/*
 	    public Integer getLldpRemLocalPortNum() {
+	    	return getInstance().getSubIdAt(0);
+	    }*/
+	    public Integer getlldpRemManAddrSubtype() {
 	    	return getInstance().getSubIdAt(1);
 	    }
-	    
-	    public Integer getLldpRemChassisidSubtype() {
-	    	return getValue(LLDP_REM_CHASSIS_ID_SUBTYPE).toInt();
+	    public InetAddress getlldpRemManAddr() {
+	    	return InetAddressUtils.getInetAddress(getInstance().getIds(), 2, 4);
 	    }
 	    
-	    public SnmpValue getLldpRemChassisId() {
-	        return getValue(LLDP_REM_CHASSIS_ID);
-	    }
 	    
-	    public Integer getLldpRemPortidSubtype() {
-	    	return getValue(LLDP_REM_PORT_ID_SUBTYPE).toInt();
-	    }
-
-	    public String getLldpRemPortid() {
-	    	return decodeLldpPortId(getLldpRemPortidSubtype(), getValue(LLDP_REM_PORT_ID));
-	    }
 	    
-	    public String getLldpRemPortDescr() {
-	    	if (getValue(LLDP_REM_PORT_DESCR) != null)
-	    		return getValue(LLDP_REM_PORT_DESCR).toDisplayString();
-	    	return "";
-	    }
-
-	    public String getLldpRemSysname() {
-	        return getValue(LLDP_REM_SYSNAME).toDisplayString();
-	    }
-	    
-	    public LldpLink getLldpLink(LldpLocPortGetter lldpLocPort) {
-            LOG.info( "getLldpLink: row local port num: {}",  getLldpRemLocalPortNum());
-
-            LldpLink lldpLink = lldpLocPort.get(getLldpRemLocalPortNum());
-            // Check if lldpLink is null.....and do what?
-
-            LOG.info( "getLldpLink: row local port id: {}", lldpLink.getLldpPortId());
-            LOG.info( "getLldpLink: row local port subtype: {}", LldpPortIdSubType.getTypeString(lldpLink.getLldpPortIdSubType().getValue()));
-    	
-            lldpLink.setLldpRemChassisId(LldpLocalGroupTracker.decodeLldpChassisId(getLldpRemChassisId() , getLldpRemChassisidSubtype()));
-            LOG.info( "getLldpLink: row rem lldp identifier: {}", lldpLink.getLldpRemChassisId());
-            
-            lldpLink.setLldpRemChassisIdSubType(LldpChassisIdSubType.get(getLldpRemChassisidSubtype()));
-            LOG.info( "getLldpLink: row rem lldp chassis id subtype: {}", LldpChassisIdSubType.getTypeString(getLldpRemChassisidSubtype()));
-    	
-            lldpLink.setLldpRemSysname(getLldpRemSysname());
-            LOG.info( "getLldpLink: row rem lldp sysname: {}", lldpLink.getLldpRemSysname());
-
-            lldpLink.setLldpRemPortId(getLldpRemPortid());
-            LOG.info( "getLldpLink: row rem lldp port id: {}", lldpLink.getLldpRemPortId());
-
-            lldpLink.setLldpRemPortIdSubType(LldpPortIdSubType.get(getLldpRemPortidSubtype()));
-            LOG.info( "getLldpLink: row rem lldp port id subtype: {}", LldpPortIdSubType.getTypeString(getLldpRemPortidSubtype()));
- 
-            lldpLink.setLldpRemPortDescr(getLldpRemPortDescr());
-            
-            lldpLink.setLLdpRemTimeMark(getTimeMark());
-            
-            lldpLink.setLldpRemIndex(getInstance().getSubIdAt(2));
-    		return lldpLink;
-	    }
-
-		private Integer getTimeMark() {
-			return getInstance().getSubIdAt(0);
-		}
     }
 
-    public LldpRemTableTracker() {
-        super(s_lldpremtable_elemList);
+	private LldpLink m_lldplink;
+
+    public LldpRemManTableTracker(LldpLink lldplink) {
+    	this(lldplink,null);
     }
     
     /**
@@ -253,28 +170,42 @@ public class LldpRemTableTracker extends TableTracker {
      *
      * @param rowProcessor a {@link org.opennms.netmgt.snmp.RowCallback} object.
      */
-    public LldpRemTableTracker(final RowCallback rowProcessor) {
-        super(rowProcessor, s_lldpremtable_elemList);
+    public LldpRemManTableTracker(LldpLink lldplink,final RowCallback rowProcessor) {
+        super(rowProcessor, augment(lldplink,s_lldpremtable_elemList));
+        m_lldplink = lldplink;
     }
     
-    /** {@inheritDoc} */
+    private static SnmpObjId[] augment(LldpLink lldplink, SnmpObjId[] sLldpremtableElemlist) {
+        for (int cpt = 0; cpt < s_lldpremtable_elemList.length; cpt++){
+        	final String subIndex = new StringBuilder(lldplink.getLLdpRemTimeMark())
+        			.append(".")
+        			.append(lldplink.getLldpLocalPortNum())
+        			.append(".")
+        			.append(lldplink.getLldpRemIndex()).toString();
+        	
+        	s_lldpremtable_elemList[cpt]=SnmpObjId.get(s_lldpremtable_elemList[cpt], subIndex);
+        }
+       return s_lldpremtable_elemList;
+	}
+
+	/** {@inheritDoc} */
     @Override
     public SnmpRowResult createRowResult(final int columnCount, final SnmpInstId instance) {
-        return new LldpRemRow(columnCount, instance);
+        return new LldpRemManRow(columnCount, instance);
     }
 
     /** {@inheritDoc} */
     @Override
     public void rowCompleted(final SnmpRowResult row) {
-        processLldpRemRow((LldpRemRow)row);
+        processLldpRemManRow((LldpRemManRow)row);
     }
 
     /**
      * <p>processLldpRemRow</p>
      *
-     * @param row a {@link org.opennms.netmgt.enlinkd.snmp.LldpRemTableTracker.LldpRemRow} object.
+     * @param row a {@link org.opennms.netmgt.enlinkd.snmp.LldpRemManTableTracker.LldpRemRow} object.
      */
-    public void processLldpRemRow(final LldpRemRow row) {
+    public void processLldpRemManRow(final LldpRemManRow row) {
     }
 
 }

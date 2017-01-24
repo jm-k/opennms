@@ -31,11 +31,14 @@ package org.opennms.netmgt.enlinkd;
 import static org.opennms.core.utils.InetAddressUtils.str;
 
 import java.util.Date;
+import java.util.LinkedList;
 
 import org.opennms.core.utils.LldpUtils.LldpChassisIdSubType;
 import org.opennms.netmgt.enlinkd.snmp.LldpLocPortGetter;
 import org.opennms.netmgt.enlinkd.snmp.LldpLocalGroupTracker;
+import org.opennms.netmgt.enlinkd.snmp.LldpRemManTableTracker;
 import org.opennms.netmgt.enlinkd.snmp.LldpRemTableTracker;
+import org.opennms.netmgt.model.LldpLink;
 import org.opennms.netmgt.snmp.SnmpUtils;
 import org.opennms.netmgt.snmp.SnmpWalker;
 import org.slf4j.Logger;
@@ -119,10 +122,11 @@ public final class NodeDiscoveryLldp extends NodeDiscovery {
 
         final LldpLocPortGetter lldpLocPort = new LldpLocPortGetter(getPeer());
         trackerName = "lldpRemTable";
+        LinkedList<LldpLink> lldpLinks = new LinkedList<LldpLink>();
         LldpRemTableTracker lldpRemTable = new LldpRemTableTracker() {
 
         	public void processLldpRemRow(final LldpRemRow row) {
-        	    m_linkd.getQueryManager().store(getNodeId(),row.getLldpLink(lldpLocPort));
+        		lldpLinks.add( row.getLldpLink(lldpLocPort));
         	}
         };
 
@@ -143,6 +147,23 @@ public final class NodeDiscoveryLldp extends NodeDiscovery {
             LOG.error("run: collection interrupted, exiting",e);
             return;
         }
+
+        for (LldpLink lldplink: lldpLinks){
+        	trackerName = "lldpManTable";
+        	LldpRemManTableTracker lldpManTable = new LldpRemManTableTracker(lldplink) {
+
+            	public void processLldpRemRow(final LldpRemManRow row) {
+            	    System.out.println("******" +row.getlldpRemManAddr());
+            	}
+            };
+        	
+        	
+        	m_linkd.getQueryManager().store(getNodeId(),lldplink);
+        }
+        /*
+        
+        
+        */
         m_linkd.getQueryManager().reconcileLldp(getNodeId(),now);
     }
 

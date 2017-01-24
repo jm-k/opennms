@@ -76,6 +76,11 @@ public class LldpLink implements Serializable {
 	private String m_lldpRemPortDescr;
     private Date m_lldpLinkCreateTime = new Date();
     private Date m_lldpLinkLastPollTime;
+
+
+
+	private Integer m_timeMark;
+	private Integer m_transiaentIndex;
 	
 	public LldpLink() {
 	}
@@ -266,8 +271,27 @@ public class LldpLink implements Serializable {
 	public void setLldpLinkLastPollTime(Date lldpLinkLastPollTime) {
 		m_lldpLinkLastPollTime = lldpLinkLastPollTime;
 	}
+	
+	public String getLLdpRemTimeMark() {
+		return Integer.toString(m_timeMark);
+	}
+	
+	public void setLLdpRemTimeMark(Integer timeMark) {
+		 m_timeMark = timeMark;
+	}
 
+	public String getLldpRemIndex() {
+		return Integer.toString(m_transiaentIndex);
+	}
 
+	public void setLldpRemIndex(Integer transientIndex) {
+		m_transiaentIndex = transientIndex;
+	}
+	
+	
+	public void getLldpLinkLastPollTime(Date lldpLinkLastPollTime) {
+		m_lldpLinkLastPollTime = lldpLinkLastPollTime;
+	}
 	public void merge(LldpLink link) {
 
 		setLldpPortId(link.getLldpPortId());
@@ -309,4 +333,5 @@ public class LldpLink implements Serializable {
 			.append("lastPollTime", m_lldpLinkLastPollTime)
 .toString();
 	}
+
 }
