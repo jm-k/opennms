@@ -43,6 +43,7 @@ import org.opennms.netmgt.model.LldpLink;
 import org.opennms.netmgt.model.events.EventBuilder;
 import org.opennms.netmgt.snmp.SnmpUtils;
 import org.opennms.netmgt.snmp.SnmpWalker;
+import org.opennms.netmgt.xml.event.Event;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -179,9 +180,11 @@ public final class NodeDiscoveryLldp extends NodeDiscovery {
             return;
         }
         
-        
+        LOG.debug("Store resumlts");
         for (Pair<LldpLink, List<InetAddress>> lldplink : remManCollector.getValues()){
+        	LOG.debug("Store ",lldplink.fst);
         	m_linkd.getQueryManager().store(getNodeId(),lldplink.fst);
+        	LOG.debug("Send events ",lldplink.fst);
         	for(InetAddress ia: lldplink.snd){
         		sendremMgmtDiscoveredEvent(lldplink.fst,ia);
         	}
@@ -201,7 +204,12 @@ public final class NodeDiscoveryLldp extends NodeDiscovery {
 		 builder.addParam("mgmtAddress", str(ia));
 		 builder.addParam("chassisId", lldpLink.getLldpRemChassisId());
 		 builder.addParam("sysName", lldpLink.getLldpRemSysname());
-		 m_linkd.getEventForwarder().sendNow(builder.getEvent());
+		 builder.addParam("localPortNum", lldpLink.getLldpLocalPortNum());
+		 builder.addParam("localPortDescr", lldpLink.getLldpPortDescr());
+		 builder.addParam("localPortId", lldpLink.getLldpPortId());
+		 Event event = builder.getEvent();
+ 		 LOG.debug("Send event {} ",event);
+		 m_linkd.getEventForwarder().sendNow(event);
 	}
 
 	@Override

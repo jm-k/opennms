@@ -620,6 +620,7 @@ public class EnLinkdSnmpIT extends NmsNetworkBuilder implements InitializingBean
         		System.err.println("columns number in the row: " + row.getColumnCount());
 
         		assertEquals(6, row.getColumnCount());
+        		System.err.println("LldpRemRelIndex " + row.getLldpRemRelIndex()[0] +  row.getLldpRemRelIndex()[1] +  row.getLldpRemRelIndex()[2] );
         		LldpLink link = row.getLldpLink(lldpLocPort);
 
         		System.err.println("local port number: " + row.getLldpRemLocalPortNum());
